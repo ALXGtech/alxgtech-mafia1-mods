@@ -1,0 +1,17 @@
+# Run output
+*.log
+vjoy_test_log.txt
+
+# Backups and local edits
+*.bak
+*.local.*
+
+# Build and packaging output
+/dist/
+/build/
+*.zip
+
+# OS noise
+Thumbs.db
+desktop.ini
+.DS_Store
