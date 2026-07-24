@@ -1,6 +1,6 @@
 English | [Русский](README.ru.md) | [Čeština](README.cs.md)
 
-# H-Shifter for Mafia: The City of Lost Heaven
+# H-Shifter for Mafia: The City of Lost Heaven (2002) in 2026
 
 Drive Mafia (2002) with a real H-pattern shifter. No AutoHotkey, no vJoy, no virtual
 controller: a plugin inside the game plus a small tool to bind your lever.
