@@ -1,103 +1,121 @@
 # How it works
 
-The whole mod is one AutoHotkey v2 file, `src/HShifter_to_vJoy.ahk`. This document
-explains the three things in it that are not obvious, because they are the ones that
-cost the most work and the ones you will break first if you change the timings.
+This document explains the parts of the mod that are not obvious from the README: the
+closed loop, the four bugs that shaped it, and how transmission-mode intent is decided.
+All of it lives in `src/gearbox_logic.h` (the decision core, shared with the test suite)
+and `src/gearbox_hook8.c` (the DirectInput hook that drives it).
 
 ## The problem in one sentence
 
-An H-pattern shifter reports an absolute position; the game accepts only relative
-commands. Translating one into the other is easy while the lever is in a detent, and
-hard for every millisecond it is between two of them.
+An H-pattern shifter reports an absolute position - "the lever is in third" - with no
+history. Mafia's gearbox is sequential: it only knows "shift up" and "shift down".
+Closing that gap is the whole mod.
 
-## The polling loop
+## Delivering a shift: key injection, not a virtual controller
 
-A 10 ms timer reads the shifter. `DetectGear()` returns the first pressed button as a
-gear number: 1 to 6 for the forward gears, `-1` for the dedicated reverse button, `99`
-for the hard-reset button, and `0` when no button is pressed at all.
+The game reads its keyboard through DirectInput 8. The mod creates a keyboard device of
+its own purely to reach the device class vtable, patches `GetDeviceState`, and sets the
+bit of the configured DIK scancode in the 256-byte buffer the game is about to read.
+Nothing is emulated and no virtual joystick exists: the game asks Windows for its own
+keyboard state and receives that state with one extra bit set. A 256-byte buffer is what
+identifies the keyboard among the DirectInput devices the game opens; the mod's own
+devices are excluded so its internal bookkeeping never loops back on itself.
 
-`CheckShifter()` acts only on a change, so holding a gear costs nothing. When the
-target differs from the last one it either drives to a gear (`ShiftTo`), brute-forces
-to reverse (`GoToReverse`), or resets through reverse to neutral (`ResetViaReverse`).
+Setting a bit and clearing one are the same code path, which is also how button
+suppression works: a lever button bound in `gearbox.ini` is zeroed out of the game's own
+device state so it does not also fire whatever the game's control-binding screen has it
+mapped to.
 
-`ShiftTo` is the counting path: it takes the difference between the target and its own
-`CurrentGear` and pulses gear-up or gear-down that many times, 30 ms per pulse with a
-40 ms gap. This is the only path that trusts the internal counter.
+## The closed loop: why it cannot drift
 
-## 1. Neutral is a timed decision, with two different windows
+Every cycle reads the game's own current gear at `[car+0x58]+0x5D0`, compares it to the
+lever's target, and emits **one** sequential step toward that target - never more. It
+then waits for the read gear to actually move before considering the step done.
 
-A reading of "no gear" means one of two things, and they are indistinguishable at the
-moment you see them:
+Nothing in the mod counts its own shifts. The target comes from the lever, the current
+value comes from the game, and there is no third number that can fall out of sync with
+either. That closed loop is what makes a car with two gears safe: asking a two-gear car
+for 4th shifts up, reads 2, shifts up again, reads 2 again unmoved, and stops - the mod
+never needed to know the car only has two gears, and it can never desync a counter it
+does not keep.
 
-- the lever is parked in neutral, and the game should be put in neutral;
-- the lever is between two detents on its way somewhere, and the game should be left
-  alone.
+The mod also reads the manual/automatic flag at `[car+0x58]+0x53C` every cycle, and
+never writes it (see "Transmission mode intent" below).
 
-You cannot tell them apart, so do not try. What matters is not guessing right but
-making a wrong guess harmless. The mod waits for the gap to persist before engaging
-neutral, and the length of the wait depends on where the lever came from
-(`LastRealGear`):
+## The four bugs, and what each one taught
 
-| Came from | Wait | Why |
-|---|---|---|
-| A forward gear | 600 ms | The gap while crossing from 1st to 2nd is short. Engaging neutral there would be wrong. |
-| Reverse | 1500 ms | Reverse to 1st is a long traverse across the whole gate. A short window would fire in the middle of it. |
+Four drives on real hardware found four ways a momentary condition can get recorded as a
+permanent fact. All four are fixed in the shipped logic; they are listed here because
+each is a specific trap and a specific reason a naive closed loop is not enough.
 
-If you widen only the forward window you will make normal shifting feel dead. If you
-shorten the reverse window, moving out of reverse trips neutral halfway.
+1. **A single refusal is not a permanent limit.** The very first version latched "this
+   gear does not exist" after one rejected shift - which happens whenever the box is in
+   automatic, or momentarily too fast for a downshift, and has nothing to do with the
+   car's real gear count. A refusal now backs that direction off for `retry_ms`, and any
+   gear movement or a new lever position clears it immediately. The gear-count clamp
+   never needed a latch to work: the loop already reads the game's real gear, so it
+   cannot drift regardless.
+2. **A momentary button is not a lever.** Testing with wheelbase buttons standing in for
+   an H-pattern shifter, a multi-step move (say neutral to 4th) only ever completed one
+   step, because the button read as pressed for about 150 ms and then let go. A real
+   lever holds its position, so the target it sets is now sticky until the lever
+   physically moves again, not just while a button happens to be held.
+3. **Refusals are always temporary.** Once retries worked, the box refusing a downshift
+   because the car was going too fast (ordinary behaviour, not a limit) briefly cost
+   first and then second gear before landing the car stuck in third with no way back to
+   neutral or reverse. The fix is the same back-off as bug 1, generalised: nothing the
+   gearbox refuses is ever assumed permanent.
+4. **The lever passes through nothing on its way to something.** With neutral configured
+   as the shifter's rest position, every gate-to-gate move passes through "no gate" for
+   an instant, and the mod shifted to neutral and back on every single gear change.
+   Measured from a real drive: gate to gate takes 0.22-0.94 s, while a deliberate neutral
+   dwell runs 1.1 s or longer. So a gate is acted on the instant it is reached, and only
+   the rest position waits out `neutral_delay_ms` (1100 ms default) before the mod
+   believes it. Leaving reverse is exempt from that wait, because that move genuinely
+   passes through neutral and neutral is what the driver wants there.
 
-## 2. The shift sequences are atomic, and that is the actual bug fix
+The common shape of bugs 1, 3 and 4 is the same lesson from three different angles: a
+momentary condition (one refusal, a busy box, a lever mid-travel) must never be recorded
+as a permanent fact about the car or the lever.
 
-The original symptom was that pushing the lever into reverse from a gear frequently
-left the game in neutral instead. It looked like a timing problem. It was not: it was
-reentrancy.
+## Transmission mode intent
 
-The sequence was this. A slow push toward reverse produced a long no-gear gap, which
-started the auto-neutral reset. That reset spams gear-down toward reverse and then
-sends one gear-up to land on neutral. While it was still running, the 10 ms poller saw
-the reverse button, fired `GoToReverse`, and drove the game into reverse. Then the
-interrupted reset resumed, sent its trailing gear-up, and bumped reverse into neutral.
+Alex's rule, and the reason mode handling reads a flag instead of a button:
 
-The fix is `Critical` on `ShiftTo`, `GoToReverse` and `ResetViaReverse`: while a press
-sequence runs, the poller cannot interrupt it. Widening the grace window alone does
-not fix this, because the race is not about how long you wait, it is about two
-sequences interleaving.
+> If the player switches to automatic, the mod's own auto-return-to-manual must not
+> fight them. If they shift a gear while in automatic, that switches back to manual with
+> the correct gear already selected. Switching to automatic must always work cleanly.
 
-If reverse handling ever misbehaves again, check that `Critical` is still in effect
-before touching any delay.
+An early version only trusted the wheelbase's own mode control as a deliberate choice,
+so a keyboard press of the game's own automatic key read as an accident, and the mod
+forced manual back and pinned the driver in first gear. The fix reads intent from the
+mode flag itself, not from which control moved it: any switch into automatic that the
+mod itself did not cause is the driver's decision, whatever pressed it, and the mod goes
+hands-off until the lever moves again. Moving the lever is the one action that always
+means "give me this gear", so it is the only thing that returns control to manual.
 
-## 3. Reverse-aware automatic neutral
+If the wheelbase's mode control is a latching switch rather than a momentary button, the
+switch's own transitions are what the mod acts on (`mode_hold` in `gearbox.ini`); holding
+a position is never re-asserted on every cycle, only the edges are.
 
-The auto-neutral path calls `ResetViaReverse(rAware := true)`. The reset always drives
-down to reverse first, because reverse is the one position it can reach from anywhere
-without trusting the counter. At that moment it checks the lever again: if the lever
-is now on reverse, the game is already exactly where the driver wants it, so the reset
-skips its trailing gear-up and stays in reverse. It also sets `LastTarget` to `-1` so
-that the poller does not immediately re-fire `GoToReverse`.
+## Configuration reference (`gearbox.ini`)
 
-The hard-reset button and `F10` call the same routine with `rAware := false`, so they
-always land on neutral regardless of where the lever is. That is what makes them
-usable as a resynchronisation command.
+Set by `gearbox-setup.exe`, read once at load and hot-reloaded after. See
+[`gearbox.ini.example`](gearbox.ini.example) for a complete annotated file.
 
-## Why brute force to reverse instead of counting
+| Key | Effect |
+|---|---|
+| `closed_loop` | 1 reads the gear back and clamps to the real gearbox; 0 injects keys open loop while the log records whether the address chain resolved. Verify the log shows the chain resolving before setting 1 on an unverified build. |
+| `hold_ms` | How long an injected key stays pressed. Must survive at least one game input poll. |
+| `gap_ms` | Gap between consecutive injected presses in a multi-step move. |
+| `retry_ms` | How long a refused direction backs off before being tried again. |
+| `neutral_delay_ms` | Grace window before the rest position is believed to mean neutral, not a gate in transit. |
+| `mode_hold` | 1 if the mode control is a latching switch (act on transitions only); 0 if it is a momentary button. |
 
-`CurrentGear` is an open-loop estimate. The mod cannot read the game's gearbox, so any
-refused or dropped shift makes the estimate wrong, and every counted shift after that
-is wrong too. Reverse is reachable without the estimate: send more gear-downs than the
-gearbox has gears (`MaxShiftDownToReverse = 8`, one more than the seven downs needed
-from 6th) and the game is in reverse no matter where it started. Every recovery path
-in the mod goes through that known state, which is why they always work and the
-counting path only usually does.
+## Building
 
-## Tuning constants
+```
+i686-w64-mingw32-clang -O2 -m32 -mwindows -o gearbox-setup.exe gearbox_gui.c -lkernel32 -luser32 -lcomdlg32
+```
 
-| Constant | Default | Effect |
-|---|---|---|
-| `ShiftDelay` | 40 ms | Gap between consecutive pulses in a sequence. Too short and the game drops shifts. |
-| `ButtonPulse` | 30 ms | How long the virtual button stays pressed. Must survive at least one game input poll. |
-| `NeutralDelay` | 600 ms | Grace window after a forward gear. |
-| `ReverseNeutralDelay` | 1500 ms | Grace window after reverse. |
-| `MaxShiftDownToReverse` | 8 | Down-pulses used to force reverse. Must exceed the gear count. |
-
-Change one at a time and drive a full lap. A gearbox mod that is wrong once in fifty
-shifts feels broken, and once in fifty is not visible in a two-minute test.
+32-bit only: the mod loads into a 32-bit process.

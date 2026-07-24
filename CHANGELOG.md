@@ -5,22 +5,35 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0] - 2026-07-24
+## [Unreleased]
 
-First public release.
+Nothing has shipped yet. Seven test drives have settled the design and fixed four bugs;
+an eighth drive re-checking every fix together on the real shifter has not been signed
+off. See [Known issues](README.md#known-issues) in the README before using this.
 
 ### Added
 
-- H-pattern shifter to sequential gearbox translation for Mafia: The City of Lost
-  Heaven, via vJoy virtual DirectInput device (`src/HShifter_to_vJoy.ahk`).
-- Gears 1 to 6 on shifter buttons 1 to 6; reverse on button 8; hard reset to neutral
-  on button 7 and on `F10`.
-- Automatic neutral after a no-gear gap, with an asymmetric grace window: 600 ms after
-  a forward gear, 1500 ms when leaving reverse.
-- Reverse-aware automatic neutral: if the lever reaches reverse during the reset
-  sequence, the mod stays in reverse instead of returning to neutral.
-- Atomic shift sequences, so the 10 ms poller cannot interrupt a running sequence.
-- `F9` hotkey reporting the internally tracked gear.
-- Minimal vJoy diagnostic script (`src/test_vjoy_minimal.ahk`).
-- Launcher that starts the script and the game together and stops the script when the
-  game exits (`tools/Launch Mafia with Shifter.ps1`).
+- Closed-loop H-pattern shifter to sequential gearbox translation: reads the game's own
+  current gear after every step and clamps to it, so a car with fewer gears than the
+  lever has positions simply stops moving instead of desyncing (`src/gearbox_hook8.c`,
+  `src/gearbox_logic.h`).
+- Key injection through a patched DirectInput 8 `GetDeviceState`, so the mod presses the
+  same keys the game itself has bound - no vJoy device, no AutoHotkey, `Game.exe`
+  untouched.
+- Sticky lever target: a multi-step move completes even if the source button is
+  momentary.
+- Refusal back-off (`retry_ms`): a rejected shift is retried after a delay instead of
+  being latched as a permanent limit.
+- Asymmetric neutral debounce (`neutral_delay_ms`): a gate is acted on instantly, the
+  lever's rest position waits out the grace window before being read as neutral, and
+  leaving reverse is exempt.
+- Transmission-mode intent read from the game's own manual/automatic flag, not from
+  which control moved it, so a keyboard mode change is respected exactly like a
+  wheelbase button or switch.
+- Multi-device binding: gears on one device, the mode control on another, independent
+  suppress lists.
+- `gearbox-setup.exe`: portable GUI binder. Click a row, press the button or key you
+  want, click again to redo. Install, install-and-launch, and an off switch that renames
+  the `.asi` so the next launch is completely stock.
+- Offline test suite (`tests/test_gearbox.c`) simulating the shift logic against the
+  shipped decision core.
