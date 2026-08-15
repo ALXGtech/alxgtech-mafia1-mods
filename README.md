@@ -9,7 +9,7 @@ Mafia: The City of Lost Heaven, in one utility that installs and removes them.
 
 ## 🚀 Quick start
 
-Three mods for **Mafia: The City of Lost Heaven** - the first one - in a single small program.
+Three mods for **Mafia: The City of Lost Heaven (2002)** - the OG Mafia 1 - in a single small program.
 Too long to read? This is all of it:
 
 1. Download the `.zip` from **[Releases](../../releases)**.
