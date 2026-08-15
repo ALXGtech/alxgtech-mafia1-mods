@@ -24,6 +24,9 @@ Too long to read? This is all of it:
 4. Run it.
 5. Switch on the mods you want, inside the program, and play.
 
+**Then set them up - [it is worth five minutes](#-setting-each-mod-up).** Especially the force
+feedback, which needs to be told your wheel's rotation range before it can feel right.
+
 | | mod | in this release |
 |:--:|---|---|
 | 🎮 | **Force feedback** - a full force model for a direct drive wheel | ✅ ready |
@@ -99,6 +102,94 @@ whether it was forgotten, and it says the same thing: not finished, installs not
 To remove a mod, press `Disable this mod` on its tab. The ASI loader leaves with the last mod
 that needed it, and the utility's own folder goes with it.
 
+## ⚙️ Setting each mod up
+
+Every tab has the same three things at the top: the enable switch, your game folder, and a line
+telling you whether the `Game.exe` it found is the build all of this was tuned on.
+
+**Run Mafia once before you start.** Let it create a profile and quit. Two things depend on it: the
+utility can only write the recommended in-game settings into a profile that exists, and the game
+must have seen your wheel at least once.
+
+### 🎮 Force Feedback
+
+![The Force Feedback tab: wheel selection, rotation range, the strength sliders and the wheel-weight column](docs/img/tab-force-feedback.png)
+
+Everything on this tab is **live** - it reaches the game as you move the slider, no restart.
+
+1. **Plug the wheel in, then open the tab.** If it says the wheel is not plugged in, press
+   **Refresh list** and pick your wheel from the dropdown. **Test - push the wheel** confirms the
+   mod is talking to it.
+2. **Press `ON: recommended in-game FFB settings`.** That writes the game's own handling and force
+   feedback values this mod was tuned against, into your Mafia profile. Skip it and you are tuning
+   against a different baseline than the one every number here assumes.
+3. **Set `WHEEL ROTATION RANGE` to whatever your wheel's own driver is set to.** This is the one
+   setting you must not guess. It changes nothing on the wheel - it tells the mod what to serve.
+   Everything was tuned at **600 degrees**, and if your wheel's range is yours to choose, 600 is
+   the recommendation.
+
+Then the sliders. **100% is the shipped feel**, and the tall mark on each one is the recommended
+value - 100 everywhere except **Gunfire, which is 0 on purpose**: it shakes the wheel for every
+shot fired from your car, including your allies', and a jolt you did not cause reads as the wheel
+going wrong.
+
+| group | what it is |
+|---|---|
+| Overall strength | less of everything, in one control |
+| Crashes and rams | the reference; 100 is the ceiling |
+| Hitting objects | crates, bins, booths, hydrants |
+| Pedestrians | what it says |
+| Road surface | curbs, tram rails, offroad |
+| Slide feel | the slip-angle effect |
+| Wheel weight | centering spring, and the damper at a standstill and in motion |
+
+Trucks have their own damper pair that multiplies the car values. Those are arithmetic and nobody
+has driven them, which the tab says out loud. **Back to default settings** puts every slider back
+to 100%.
+
+**Presets 1, 2, 3.** The one lit green is the one being edited, and every value on the page goes
+into it. `Import preset...` and `Export preset...` move them between machines.
+
+### 🕹️ H-shifter
+
+![The H-shifter tab: a binding per gate, the A/M mode button with its two behaviours, and the three keys the game itself uses](docs/img/tab-h-shifter.png)
+
+**This is the one tab whose changes need a restart of Mafia.** It says so at the top.
+
+1. **Bind the gates.** Click a binding, then move the shifter into that gear. Click again to
+   change it. Neutral usually needs nothing - on most shifters it is the rest position.
+2. **Bind the A/M mode button, and pick how it behaves.** Two buttons under it:
+   - **`Hold to switch A/M`** - for a gate on the shifter itself, where the button is held while
+     you are in that position.
+   - **`One press to switch A/M`** - for a separate button that clicks and springs back.
+
+   Pick the one that matches the hardware you bound. This is the setting people get wrong, because
+   both work and only one matches what your hand is doing.
+3. **The three game keys at the bottom are the game's, not ours.** Set GEAR UP, GEAR DOWN and
+   gearbox mode in **Mafia's own Options** first, then press the same keys here so the mod knows
+   what the game is listening for.
+4. **Restart Mafia.**
+
+### 👁️ First person
+
+![The First person tab: the wide-screen fix, the seat sliders, the horizon choice and the optional camera keys](docs/img/tab-first-person.png)
+
+Live as well - no restart.
+
+- **`UI wide-screen fix`** un-stretches the radar and the speedometer, which Mafia drew for a 4:3
+  screen. On by default; the button turns it off while the game runs.
+- **Where the driver's eye sits** - height, forward/back, left/right, near clipping plane, look
+  up/down, and field of view. The marked value on each slider is the seat this ships with.
+  **Back to the default seat** returns to it.
+- **`Field of view`** is 86, which fits a 16:9 screen; the game ships 70. This one patches
+  `Game.exe`, and switching the mod off writes the original bytes back.
+- **Horizon**: `Locks to horizon` is the recommended setting and what it was driven with.
+  `Rolls with the car` is closer to a real head and harder to watch.
+- **Keys to adjust the camera while driving** are optional and **keyboard only in this version.
+  Wheel buttons are not supported here** - you can still rebind the keys, and F1-F6 is the shipped
+  layout.
+- **Presets 1, 2, 3**, same as the force feedback: the green one is being edited.
+
 ### What enabling a mod puts in the game folder
 
 | mod | files |
@@ -131,7 +222,10 @@ you do not already have your own.
 
 ## Usage
 
-While driving, with the first-person camera on:
+Setting the mods up is [its own section above](#-setting-each-mod-up). This is what you do once
+they are set up.
+
+While driving, with the first-person camera on, the shipped keys are:
 
 | key | what |
 |---|---|
@@ -140,13 +234,13 @@ While driving, with the first-person camera on:
 | F5 / F6 | eye forward / back |
 | F9 / F10 | near clip plane out / in |
 
-The seat you settle on is written back to `mafia_fp.ini`, so it survives a relaunch. The same
-values are on the First person tab, together with the near plane, the horizon lock, where the
-camera aims, and the field of view. Any of those keys can be rebound there, and more controls exist unbound in
-`mafia_fp.ini`.
+Keyboard only, as the tab says. The seat you settle on is written back to `mafia_fp.ini`, so it
+survives a relaunch, and the same values are on the First person tab. More controls exist unbound
+in `mafia_fp.ini`.
 
-The H-shifter is bound on its own tab: press the button that corresponds to each gate, then
-start the game. Gearbox changes apply after a restart of Mafia, which the tab says on screen.
+Everything on the Force Feedback and First person tabs takes effect while the game runs, so you
+can leave the utility open beside Mafia and feel a change on the next corner. The H-shifter is the
+exception: its bindings are read when the game starts.
 
 ## Compatibility
 

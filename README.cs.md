@@ -24,6 +24,9 @@ Příliš dlouhé na čtení? To je všechno:
 4. Spusťte jej.
 5. V programu zapněte módy, které chcete, a hrajte.
 
+**Pak je nastavte - [je to na pět minut](#-nastavení-každého-módu).** Hlavně silovou zpětnou
+vazbu: musíte jí říct rozsah otáčení vašeho volantu, jinak nebude působit správně.
+
 | | mód | v tomto vydání |
 |:--:|---|---|
 | 🎮 | **Silová zpětná vazba** - kompletní sada sil pro direct drive volant | ✅ hotovo |
@@ -99,6 +102,95 @@ zda se na něj nezapomnělo, a říká totéž: není hotový, zatím nic neinst
 Mód odeberete stisknutím `Disable this mod` na jeho záložce. ASI loader odchází s posledním
 módem, který jej potřeboval, a s ním i vlastní složka nástroje.
 
+## ⚙️ Nastavení každého módu
+
+Každá záložka má nahoře totéž: přepínač zapnutí, vaši složku hry a řádek, který říká, zda nalezené
+`Game.exe` je to sestavení, na kterém bylo vše laděno.
+
+**Spusťte Mafii jednou, než začnete.** Nechte ji vytvořit profil a ukončete ji. Závisí na tom dvě
+věci: program dokáže zapsat doporučená herní nastavení jen do profilu, který už existuje, a hra
+musí váš volant alespoň jednou vidět.
+
+### 🎮 Silová zpětná vazba
+
+![Záložka Force Feedback: výběr volantu, rozsah otáčení, posuvníky síly a sloupec s váhou volantu](docs/img/tab-force-feedback.png)
+
+Vše na této záložce je **živé** - projeví se ve hře ve chvíli, kdy posuvníkem pohnete, bez
+restartu.
+
+1. **Nejdřív připojte volant, teprve pak otevřete záložku.** Pokud je napsáno, že volant není
+   připojen, stiskněte **Refresh list** a vyberte svůj volant ze seznamu.
+   **Test - push the wheel** potvrdí, že s ním mód mluví.
+2. **Stiskněte `ON: recommended in-game FFB settings`.** Zapíše to do vašeho profilu Mafie ty
+   vlastní hodnoty jízdního modelu a silové zpětné vazby hry, proti kterým byl tento mód laděn.
+   Když to vynecháte, ladíte proti jinému výchozímu bodu, než ze kterého vychází každé číslo na
+   této stránce.
+3. **Nastavte `WHEEL ROTATION RANGE` přesně na to, na co je nastaven ovladač vašeho volantu.** To
+   je jediné nastavení, které se nesmí hádat. Na volantu samotném nic nemění - říká módu, co má
+   posílat. Vše bylo laděno na **600 stupních**, a pokud si rozsah volíte sami, 600 je doporučení.
+
+Pak posuvníky. **100 % je pocit, se kterým se mód dodává**, a vysoká značka na každém posuvníku je
+doporučená hodnota: 100 všude kromě **Gunfire, které je 0 záměrně**. Otřese volantem při každém
+výstřelu z vašeho auta, včetně výstřelů vašich spojenců, a otřes, který jste nezpůsobili, působí
+jako porucha volantu.
+
+| skupina | co to je |
+|---|---|
+| Overall strength | méně všeho najednou, jedním ovladačem |
+| Crashes and rams | referenční hodnota; 100 je tady strop |
+| Hitting objects | bedny, popelnice, stánky, hydranty |
+| Pedestrians | přesně to, co je napsáno |
+| Road surface | obrubníky, tramvajové koleje, mimo silnici |
+| Slide feel | efekt úhlu skluzu |
+| Wheel weight | vystřeďovací pružina a tlumič - v klidu i za jízdy |
+
+Nákladní vozy mají vlastní dvojici tlumičů, která násobí hodnoty osobních aut. Jsou aritmetické a
+nikdo s nimi nejel, což záložka říká nahlas. **Back to default settings** vrátí všechny posuvníky
+na 100 %.
+
+**Předvolby 1, 2, 3.** Ta, která svítí zeleně, se upravuje, a jdou do ní všechny hodnoty ze
+stránky. `Import preset...` a `Export preset...` je přenášejí mezi počítači.
+
+### 🕹️ H-řadička
+
+![Záložka H-shifter: vazba na každou kulisu, tlačítko režimu A/M se dvěma chováními a tři klávesy, které používá sama hra](docs/img/tab-h-shifter.png)
+
+**Toto je jediná záložka, jejíž změny vyžadují restart Mafie.** Píše to nahoře sama.
+
+1. **Přiřaďte kulisy.** Klikněte na vazbu a pak zařaďte řadičkou ten převod. Dalším kliknutím ji
+   změníte. Neutrál obvykle nepotřebuje nic - u většiny řadiček je to klidová poloha.
+2. **Přiřaďte tlačítko režimu A/M a vyberte, jak se má chovat.** Pod ním jsou dvě tlačítka:
+   - **`Hold to switch A/M`** - pro kulisu na samotné řadičce, kde tlačítko drží po celou dobu,
+     co jste v této poloze.
+   - **`One press to switch A/M`** - pro samostatné tlačítko, které cvakne a vrátí se zpět.
+
+   Vyberte to, které odpovídá hardwaru, jenž jste přiřadili. Právě tady se chybuje nejčastěji:
+   fungují obě, ale jen jedna odpovídá tomu, co dělá vaše ruka.
+3. **Tři klávesy dole patří hře, ne nám.** Nejdřív nastavte GEAR UP, GEAR DOWN a režim převodovky
+   v **Možnostech samotné Mafie** a teprve pak stiskněte tytéž klávesy zde, aby mód věděl, na co
+   hra poslouchá.
+4. **Restartujte Mafii.**
+
+### 👁️ Kamera z pohledu řidiče
+
+![Záložka First person: oprava rozhraní pro širokoúhlou obrazovku, posuvníky posazení, volba horizontu a volitelné klávesy kamery](docs/img/tab-first-person.png)
+
+Také se projeví hned - bez restartu.
+
+- **`UI wide-screen fix`** odstraní roztažení radaru a tachometru, které Mafia kreslila pro
+  obrazovku 4:3. Zapnuto ve výchozím stavu; tlačítko to vypne i za běhu hry.
+- **Kde sedí oko řidiče** - výška, vpřed/vzad, vlevo/vpravo, blízká ořezová rovina, pohled
+  nahoru/dolů a zorné pole. Vyznačená hodnota na každém posuvníku je posazení, se kterým se mód
+  dodává. **Back to the default seat** se k němu vrátí.
+- **`Field of view`** je 86 a sedne na obrazovku 16:9; hra se dodává se 70. Právě tohle mění
+  `Game.exe`, a vypnutí módu zapíše původní bajty zpět.
+- **Horizont**: `Locks to horizon` je doporučené nastavení a to, se kterým se jezdilo.
+  `Rolls with the car` je blíž skutečné hlavě a hůř se na to dívá.
+- **Klávesy pro doladění kamery za jízdy** jsou volitelné a v této verzi **fungují jen z
+  klávesnice. Tlačítka volantu zde podporovaná nejsou** - klávesy si přesto můžete přemapovat a
+  F1-F6 je výchozí rozložení.
+- **Předvolby 1, 2, 3**, stejně jako u silové zpětné vazby: upravuje se ta, která svítí zeleně.
+
 ### Co zapnutí módu přidá do složky hry
 
 | mód | soubory |
@@ -131,7 +223,10 @@ nemáte.
 
 ## Používání
 
-Za jízdy se zapnutou kamerou z pohledu řidiče:
+Nastavení módů má [vlastní sekci výše](#-nastavení-každého-módu). Tady je to, co děláte, když už
+jsou nastavené.
+
+Za jízdy se zapnutou kamerou z pohledu řidiče jsou výchozí klávesy tyto:
 
 | klávesa | co dělá |
 |---|---|
@@ -140,13 +235,13 @@ Za jízdy se zapnutou kamerou z pohledu řidiče:
 | F5 / F6 | oči dopředu / dozadu |
 | F9 / F10 | bližší ořezová rovina dál / blíž |
 
-Posazení, na kterém se ustálíte, se zapíše zpět do `mafia_fp.ini` a přežije restart. Tytéž
-hodnoty jsou na záložce First person spolu s bližší ořezovou rovinou, zámkem horizontu,
-náklonem kamery a zorným polem. Kteroukoli z těchto kláves tam lze přemapovat a v `mafia_fp.ini` jsou další,
-zatím nepřiřazené.
+Pouze klávesnice, jak říká i záložka. Posazení, na kterém se ustálíte, se zapíše zpět do
+`mafia_fp.ini` a přežije restart a tytéž hodnoty jsou na záložce First person. V `mafia_fp.ini`
+jsou další klávesy, zatím nepřiřazené.
 
-H-řadička se nastavuje na vlastní záložce: stiskněte tlačítko odpovídající každé kulise a pak
-spusťte hru. Změny řadičky se projeví až po restartu Mafie, což záložka na obrazovce říká.
+Vše na záložkách Force Feedback a First person se projeví za běhu hry - utilitu můžete nechat
+otevřenou vedle Mafie a změnu ucítíte v další zatáčce. Jediná výjimka: vazby H-řadičky se čtou
+při startu hry.
 
 ## Kompatibilita
 
