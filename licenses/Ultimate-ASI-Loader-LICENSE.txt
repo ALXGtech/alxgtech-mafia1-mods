@@ -1,6 +1,18 @@
+Ultimate ASI Loader - https://github.com/ThirteenAG/Ultimate-ASI-Loader
+Shipped by this project as dinput8.dll, unmodified.
+
+Which build this notice belongs to, since the upstream release it came from is no longer
+published: the file is 2 152 448 bytes, SHA-256
+9a2bb218ab014fa4ad56104108c26ae48bf3e22595c126cd4f41367c799da722, its PE link timestamp
+is 2019-07-24 18:06:54 UTC, and its version resource names it "Ultimate-ASI-Loader-x86"
+with FileVersion 1.0.0.0. Upstream renamed that project to "-Win32" on 2021-12-06 and
+every release predating the rename has since been removed, so no surviving tag can be
+named as the source. The copyright line below is the one upstream carried when this
+binary was built; upstream's current license says 2023.
+
 MIT License
 
-Copyright (c) 2026 Alexander Goncharov (ALXG)
+Copyright (c) 2018 ThirteenAG
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,9 +31,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-This license covers the code of this project only. It does not cover Mafia:
-The City of Lost Heaven or any of its files, and it does not cover the
-third-party component this release bundles - see THIRD-PARTY.md.

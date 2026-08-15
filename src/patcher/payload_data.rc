@@ -1,0 +1,20 @@
+/* The embedded payload, and ONE copy of the list.
+ *
+ * Included by src/patcher/payload.rc (the console patcher) and src/launcher/launcher.rc (the
+ * window). Both exes install the same files, so both embed the same bytes; two copies of this
+ * list is how one of them ends up shipping a mod the other does not.
+ *
+ * Paths are relative to the PROJECT ROOT, which is where both build scripts invoke windres
+ * from. IDs must match RES_* in install_core.h.
+ */
+
+100 RCDATA "payload/dinput8.dll"
+101 RCDATA "payload/mafia_ffb.asi"
+102 RCDATA "payload/mafia_fp.asi"
+103 RCDATA "payload/mafia_fp.ini"
+104 RCDATA "payload/gearbox_hook.asi"
+/* 105 was gearbox-setup.exe, retired 2026-08-04: ALXG Mafia Mods has an H-shifter tab and a
+   second binder in the game folder is a second thing to keep in step with the mod. The id is
+   left unused rather than reassigned - a recycled RCDATA id is how a build ends up installing
+   one payload under another's name. */
+106 RCDATA "payload/gearbox.ini"

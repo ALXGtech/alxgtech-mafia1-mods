@@ -1,15 +1,19 @@
-# Run output
-*.log
-vjoy_test_log.txt
-
-# Backups and local edits
-*.bak
-*.local.*
-
 # Build and packaging output
 /dist/
 /build/
 *.zip
+*.o
+*.obj
+*.exe
+*.asi
+*.dll
+
+# Run output
+*.log
+
+# Backups and local edits
+*.bak
+*.local.*
 
 # OS noise
 Thumbs.db

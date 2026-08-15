@@ -3,12 +3,12 @@
  *
  * v7 proved the first half - specific wheelbase buttons can be hidden from the game
  * (344 measured suppressions). It could not shift anything, because nothing emitted a
- * gear change. This file adds that, by the route Alex chose on 2026-07-24:
+ * gear change. This file adds that, via the route chosen on 2026-07-24:
  *
  *   KEY INJECTION FIRST, action injection later as an upgrade.
  *
  * WHY A KEY. LS3DF reads the keyboard through DINPUT8 (Game.exe reads the wheel through
- * IJoy on DirectInput 7 - a different stack, see memory/ijoy-is-directinput7). The
+ * IJoy on DirectInput 7 - a different stack, already confirmed). The
  * shared-vtable patch that proved suppression on the DX7 joystick works identically on the
  * DI8 keyboard: create our own keyboard device purely to obtain the class vtable, patch
  * GetDeviceState, and OR the bit of the key the user has bound to GEARUP/GEARDOWN into the
@@ -39,7 +39,7 @@
  *     gear1=6 ... gear6=0, reverse=4, neutral=5   (-1 = neutral is the rest position)
  *     gearup_dik=0x1E     ; DIK of the key bound to GEARUP in the game's options (A)
  *     geardown_dik=0x2C   ; DIK for GEARDOWN (Z)
- *     mode_dik=0x30       ; optional, MOTORSWITCH / manual-auto toggle (B)
+ *     mode_dik=0x32       ; optional, MOTORSWITCH / manual-auto toggle (M)
  *     mode_btn=38         ; wheel button that should fire mode_dik
  *     hold_ms=40  gap_ms=60  closed_loop=1
  *     gameptr=0x63788C  gear_ofs=0x5D0  mode_ofs=0x53C     (GOG defaults)
@@ -114,7 +114,11 @@ static void GamePath(char *o,const char *b){ int i=0,j=0; while(g_dir[i]){o[i]=g
 /* EVERY gearbox file except this .asi lives in one folder inside the game - the setup tool,
    the settings and this log. The .asi itself cannot move: Ultimate ASI Loader only scans the
    game directory plus `scripts\` and `plugins\`, so a custom folder is never read. */
-#define GBDIR "gearbox hshifter setup"
+/* Under "ALXG mods\" since 2026-08-07 - one folder of ours in a game directory, not three.
+   This string and install_core.h's GEARBOX_DIR are the same path spelled twice, in two
+   programs that cannot include each other's headers; they move together or the module reads a
+   file nobody writes. */
+#define GBDIR "ALXG mods\\gearbox hshifter setup"
 static void GearboxDir(char *o){ GamePath(o,GBDIR); }
 /* Settings, written by gearbox-setup.exe sitting in that same folder. One location only: the
    development-era names (`mafia_gearbox_hook.ini`, `mafia_gearbox\gearbox.ini`) are gone, and
@@ -146,7 +150,7 @@ static int IniNum(const char *sec,const char *key,int dflt){
     return ParseNum(buf,dflt);
 }
 
-/* UP TO FOUR DEVICES, because a real rig is not one box. Alex's H-shifter is its own
+/* UP TO FOUR DEVICES, because a real rig is not one box. The H-shifter is its own
    DirectInput device (ODDOR-GEAR) while the gearbox-mode button lives on the wheelbase, so a
    single `device=` could see the gears or the mode button but never both. Every binding is
    therefore `<device index>:<button>`, and each device carries its own suppress list. */
@@ -354,7 +358,7 @@ static DWORD WINAPI Init(LPVOID p){
 }
 
 /* ===================== INPUT TELEMETRY =====================================================
-   Every input source, in the force-feedback project's 24-byte record and timebase, so the two
+   Every input source uses a shared 24-byte record and timebase, so the two
    projects read each other's logs. What the DEVICE sent (0x91/0x92) and what the GAME received
    (0x85) are separate observations - the distinction that settled two false alarms.
 
@@ -409,14 +413,24 @@ static const GUID_ IID_IDirectInput8A_T =
 static const GUID_ GUID_SysKeyboard_T =
     {0x6F1D2B61,0xD5A0,0x11CF,{0xBF,0xC7,0x44,0x45,0x53,0x54,0x00,0x00}};
 
-/* 64 buttons, not 32: Alex's mode-toggle binding is button 38 on the wheelbase. */
+/* 64 buttons, not 32: the mode-toggle binding is button 38 on the wheelbase. */
 #define TNBTN 64
 static DIOBJDF t_objs[TNAX+TNBTN];
 static DIDF t_fmt = { sizeof(DIDF), sizeof(DIOBJDF), DIDF_ABSAXIS, TNAX*4+TNBTN, TNAX+TNBTN, t_objs };
 typedef struct { LONG ax[TNAX]; BYTE btn[TNBTN]; } TSTATE;
 
 #define TMAXDEV 8
-static GUID_ t_guid[TMAXDEV]; static DWORD t_ndev=0; static void *t_dev[TMAXDEV];
+static GUID_ t_guid[TMAXDEV];
+
+/* v7.64: freshness, tracked apart from health. See 0x97 at the poll loop. */
+#define STALE_MS        6000u   /* still for this long while another device moves = frozen */
+#define STALE_FRESH_MS  3000u   /* how recently the liveliest device must have moved       */
+#define STALE_SAY_MS   30000u   /* keep saying it, so a long freeze is not one lost line   */
+static unsigned long long t_lastBits[TMAXDEV];
+static LONG  t_lastAx0[TMAXDEV];
+static DWORD t_lastMove[TMAXDEV];
+static DWORD t_saidStale[TMAXDEV];
+static DWORD t_ndev=0; static void *t_dev[TMAXDEV];
 static int t_cfg[TMAXDEV];
 /* live button state of each CONFIGURED device, published for the shift loop */
 static volatile LONG g_btnLo[MAXDEVCFG], g_btnHi[MAXDEVCFG]; static volatile LONG g_shiftSeen=0;
@@ -483,17 +497,33 @@ static int RdOk(DWORD addr,DWORD *out){
     *out=*(DWORD*)addr; return 1;
 }
 static DWORD g_car=0,g_frame=0;
+/* 0x96 - WHICH LINK OF THE CHAIN BROKE, logged on change only.
+   Same defect report as 0x95: this returned a bare 0 for five different reasons, so a dead
+   pointer chain was indistinguishable from a player who is not in a car - and after the fact
+   nobody could tell which. `a` is the step that failed:
+     1 = the game pointer          2 = game+0x24 (the car)
+     3 = car+0x58 (the frame)      4 = frame+gear_ofs
+     5 = the gear read but is out of range, i.e. the chain resolved to the wrong thing
+     0 = the chain is healthy again
+   b and c carry the last two values read, so a wrong-but-plausible address is visible. */
+static int g_chainWhy=-1;
+static void ChainWhy(int why,DWORD a,DWORD b){
+    if(why==g_chainWhy) return;
+    g_chainWhy=why;
+    L(0x96,(DWORD)why,a,b,(DWORD)g_gearOfs);
+}
 static int ReadGear(int *gear,int *mode){
     DWORD p,car,frame,v;
-    if(!RdOk(g_vaGamePtr,&p)) return 0;
-    if(!RdOk(p+0x24,&car)) return 0;
-    if(!RdOk(car+0x58,&frame)) return 0;
-    if(!RdOk(frame+(DWORD)g_gearOfs,&v)) return 0;
+    if(!RdOk(g_vaGamePtr,&p)){    ChainWhy(1,g_vaGamePtr,0); return 0; }
+    if(!RdOk(p+0x24,&car)){       ChainWhy(2,p,0);           return 0; }
+    if(!RdOk(car+0x58,&frame)){   ChainWhy(3,car,0);         return 0; }
+    if(!RdOk(frame+(DWORD)g_gearOfs,&v)){ ChainWhy(4,frame,0); return 0; }
     g_car=car; g_frame=frame;
     *gear=(int)v;
     DWORD m; *mode = RdOk(frame+(DWORD)g_modeOfs,&m) ? (int)(m&0xFF) : -1;
     /* a plausible gear keeps a stale or wrong chain from driving the loop */
-    if(*gear<-2||*gear>10) return 0;
+    if(*gear<-2||*gear>10){ ChainWhy(5,frame,v); return 0; }
+    ChainWhy(0,car,v);
     return 1;
 }
 static void Emit(int dik,int dir,int target,int cur){
@@ -606,6 +636,7 @@ static DWORD WINAPI Telemetry(LPVOID p){
         L(0x90,i,(DWORD)(t_cfg[i]+1),0,0);
     }
 
+    static HRESULT t_lastHr[TMAXDEV]; static LONG t_fail[TMAXDEV];
     static LONG lastAx[TMAXDEV][TNAX]; static unsigned long long lastBtn[TMAXDEV];
     static BYTE lastKey[256]; static DWORD lastMouse=0;
     for(DWORD i=0;i<TMAXDEV;i++){ for(int a=0;a<TNAX;a++) lastAx[i][a]=0x7FFFFFFF; lastBtn[i]=0; }
@@ -615,8 +646,30 @@ static DWORD WINAPI Telemetry(LPVOID p){
             if(!t_dev[i]) continue;
             ((Poll_T)VT(t_dev[i],T_POLL))(t_dev[i]);
             TSTATE s; memset(&s,0,sizeof(s));
-            if(((GetState_t)VT(t_dev[i],T_GETSTATE))(t_dev[i],sizeof(s),&s)<0){
-                ((Acquire_T)VT(t_dev[i],T_ACQUIRE))(t_dev[i]); continue; }
+            /* 0x95 - THE DEVICE'S OWN HEALTH, logged on CHANGE only.
+               Reported on 2026-07-27 from an 18-minute play session on the custom
+               install: the matched lever froze 0.22 s in, stuck on `buttons=00000080`, and never
+               reported again - while two other devices on the SAME DirectInput instance and the
+               same window kept reporting for the full session. The module emitted nothing all
+               evening and the log said nothing about why, because this branch re-Acquired and
+               `continue`d in silence. A permanently dead device was indistinguishable from a
+               lever nobody touched.
+               a = device index, b = the GetState HRESULT, c = the Acquire HRESULT,
+               d = how many consecutive failures this device has had. */
+            HRESULT ghr=((GetState_t)VT(t_dev[i],T_GETSTATE))(t_dev[i],sizeof(s),&s);
+            if(ghr<0){
+                HRESULT ahr=((Acquire_T)VT(t_dev[i],T_ACQUIRE))(t_dev[i]);
+                if(t_fail[i]<0x7FFFFFFF) t_fail[i]++;
+                if(ghr!=t_lastHr[i] || t_fail[i]==1){
+                    L(0x95,i,(DWORD)ghr,(DWORD)ahr,(DWORD)t_fail[i]);
+                    t_lastHr[i]=ghr;
+                }
+                continue;
+            }
+            if(t_fail[i]){   /* it came back - say so, or a recovery reads as if nothing happened */
+                L(0x95,i,0u,0u,(DWORD)t_fail[i]);
+                t_fail[i]=0; t_lastHr[i]=0;
+            }
             for(int a=0;a<TNAX;a++){
                 LONG v=s.ax[a], o=lastAx[i][a];
                 if(o==0x7FFFFFFF || (v>o?v-o:o-v) > 400){ L(0x91,i,(DWORD)a,(DWORD)v,(DWORD)o); lastAx[i][a]=v; }
@@ -631,6 +684,38 @@ static DWORD WINAPI Telemetry(LPVOID p){
             if(bits!=lastBtn[i]){
                 L(0x92,i,(DWORD)(bits&0xFFFFFFFF),(DWORD)((bits^lastBtn[i])&0xFFFFFFFF),(DWORD)(bits>>32));
                 lastBtn[i]=bits;
+            }
+            /* 0x97 - A DEVICE THAT SUCCEEDS AND LIES. This is the hole 0x95 does not cover.
+               The 18-minute episode did NOT fail: GetState kept returning S_OK and kept
+               returning the SAME frozen state, buttons=00000080, for the whole session. No
+               HRESULT changed, no failure counter moved, so the branch above stayed silent and
+               a dead lever was indistinguishable from one nobody touched.
+               Freshness is therefore tracked separately from health, and the distinction that
+               makes it a REPORT rather than a guess is comparative: a device is only called
+               frozen if it has been still while ANOTHER device on the same loop has moved.
+               All quiet = nobody is driving. One quiet while others move = that one is dead. */
+            if(bits!=t_lastBits[i] || s.ax[0]!=t_lastAx0[i]){
+                t_lastBits[i]=bits; t_lastAx0[i]=s.ax[0];
+                t_lastMove[i]=GetTickCount();
+                t_saidStale[i]=0;
+            }
+        }
+        {
+            DWORD nowT=GetTickCount(), newest=0;
+            for(DWORD i=0;i<t_ndev;i++) if(t_dev[i] && t_lastMove[i]>newest) newest=t_lastMove[i];
+            for(DWORD i=0;i<t_ndev;i++){
+                if(!t_dev[i] || !t_lastMove[i]) continue;
+                DWORD still=nowT-t_lastMove[i];
+                /* another device moved recently, this one has not, and the gap is long enough
+                   that it cannot be ordinary driving. a = device, b = ms since it last moved,
+                   c = ms since the LIVELIEST device moved, d = 1 the first time, then every
+                   STALE_SAY_MS so a long freeze keeps saying so. */
+                if(still>=STALE_MS && (nowT-newest)<STALE_FRESH_MS){
+                    if(!t_saidStale[i] || (nowT-t_saidStale[i])>=STALE_SAY_MS){
+                        L(0x97,i,still,nowT-newest,t_saidStale[i]?2u:1u);
+                        t_saidStale[i]=nowT?nowT:1;
+                    }
+                }
             }
         }
         for(int vk=0x08;vk<=0xFE;vk++){
@@ -657,6 +742,18 @@ BOOL WINAPI DllMain(HINSTANCE h,DWORD reason,LPVOID rr){
         /* the log joins the rest of the gearbox files in their own folder */
         char nm[MAX_PATH]; GearboxDir(nm); CreateDirectoryA(nm,NULL);
         GamePath(nm,GBDIR "\\gearbox_hook.bin");
+        /* CREATE_ALWAYS truncates, so every launch used to destroy the previous run's evidence -
+           and the way this module is used, the launch AFTER the interesting drive is the one that
+           happens while you are still working out what went wrong. Keep one generation back. */
+        {
+            char prev[MAX_PATH]; GamePath(prev,GBDIR "\\gearbox_hook.prev.bin");
+            WIN32_FILE_ATTRIBUTE_DATA fad;
+            if(GetFileAttributesExA(nm,GetFileExInfoStandard,&fad) &&
+               (fad.nFileSizeLow>24u || fad.nFileSizeHigh)){
+                DeleteFileA(prev);
+                MoveFileA(nm,prev);
+            }
+        }
         g_log=CreateFileA(nm,GENERIC_WRITE,FILE_SHARE_READ,NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL);
         /* a read-only or missing folder must not cost us the log entirely */
         if(g_log==INVALID_HANDLE_VALUE){

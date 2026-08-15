@@ -41,6 +41,7 @@ typedef struct {
     gb_ms lastModeEmit;
     int modeCause;         /* 1 = the user's mode control, 2 = our own engage-manual */
     int pendAuto;          /* owed: switch to automatic once a gear is engaged */
+    gb_ms pendAutoAt;      /* when that debt was incurred - it EXPIRES, see GB_PENDAUTO_MS */
     int haveMode;
 } GBState;
 
@@ -66,6 +67,7 @@ static void GBInit(GBState *s){
     s->sticky=-99; s->lastTarget=-99; s->respectAuto=0; s->engaged=0;
     s->blkDir=0; s->blkGear=-99; s->blkUntil=0; s->restStart=0; s->prevModeBtn=0;
     s->lastMode=-99; s->lastModeEmit=0; s->modeCause=0; s->haveMode=0; s->pendAuto=0;
+    s->pendAutoAt=0;
 }
 
 static int GBHeld(const gb_bits *bits,int dev,int btn){
@@ -90,6 +92,12 @@ static int GBLeverTarget(const GBCfg *c,GBState *s,const gb_bits *bits,int *know
 
 /* One cycle. Returns at most one action; the caller performs it and then calls GBAfterShift
    with whether the gear actually moved. */
+/* How long an owed switch-to-automatic stays owed. Long enough for the manoeuvre it exists for
+   - press mode, engage first, press mode - which the code itself paces at 400 ms per step, and
+   short enough that a debt incurred on entering a car cannot be paid minutes later while the
+   driver is happily in manual. */
+#define GB_PENDAUTO_MS 3000u
+
 static GBOut GBStep(const GBCfg *c,GBState *s,const GBIn *in){
     GBOut o; o.act=GB_NONE; o.target=-99; o.known=0; o.waitingNeutral=0; o.blockedAuto=0;
 
@@ -97,7 +105,7 @@ static GBOut GBStep(const GBCfg *c,GBState *s,const GBIn *in){
     if(in->gearValid&&in->mode>=0){
         if(!s->haveMode){ s->lastMode=in->mode; s->haveMode=1; }
         else if(in->mode!=s->lastMode){
-            /* THE KEYBOARD IS A FIRST-CLASS CONTROL. Alex must be able to switch to automatic
+            /* THE KEYBOARD IS A FIRST-CLASS CONTROL. The driver must be able to switch to automatic
                from any gear and any lever position, including with a hold-switch fitted, and the
                choice has to survive. This rule therefore applies in BOTH modes: a mode change we
                did not cause is the user's, and it stands until he moves the lever. */
@@ -106,7 +114,20 @@ static GBOut GBStep(const GBCfg *c,GBState *s,const GBIn *in){
             else                         s->respectAuto=(in->mode==1);
             /* automatic with no gear engaged is a car that will not move, however the mode got
                there - so owe the manoeuvre that fixes it */
-            if(in->mode==1&&in->gear<1) s->pendAuto=1;
+            if(in->mode==1&&in->gear<1){ s->pendAuto=1; s->pendAutoAt=in->now; }
+            /* AND CANCEL THE DEBT THE MOMENT HE IS IN MANUAL BY HIS OWN CHOICE.
+               2026-08-12: the gearbox jumped to automatic by itself several times during a drive.
+               This is how. The debt means automatic was requested; it was incurred
+               from an OBSERVATION - the game is in automatic with no gear, which is true every
+               time you get into a car - and nothing cancelled it. He then selected manual, and
+               the owed manoeuvre paid itself off by pressing the mode key, putting him back in
+               automatic from a gear he had chosen himself.
+               A mode change we emitted OURSELVES is excluded by the same 800 ms window
+               respectAuto uses, and by dt alone rather than by modeCause: the manoeuvre's own
+               step to manual is marked cause 1, so testing for cause 2 cancelled the debt in the
+               middle of paying it and the car stayed in neutral. The offline suite caught that
+               immediately - in the scenario of keyboard automatic from neutral getting the car moving. */
+            if(in->mode==0 && dt>800) s->pendAuto=0;
             s->blkDir=0;
             s->lastMode=in->mode;
         }
@@ -114,7 +135,7 @@ static GBOut GBStep(const GBCfg *c,GBState *s,const GBIn *in){
 
     /* 2. the mode control. A latching switch states the mode; a button toggles it.
        AND: Mafia's automatic will not pull away from neutral. Drive 6 ended with mode=auto,
-       gear=N and the car simply sitting there - Alex's "включаю автомат, а он никуда не едет".
+       gear=N and the car simply sitting there - reported as switching to automatic and going nowhere.
        Switching to automatic therefore means engaging a gear FIRST and flipping afterwards,
        which is what a driver means by the request. */
     if(c->dikMode>0&&c->modeBtn>=0){
@@ -134,7 +155,7 @@ static GBOut GBStep(const GBCfg *c,GBState *s,const GBIn *in){
             wantAuto=(in->mode==1)?0:1;                   /* a press means "the other one" */
         }
         s->prevModeBtn=now;
-        if(wantAuto==1&&in->gearValid&&in->gear<1) s->pendAuto=1;   /* gear first, then flip */
+        if(wantAuto==1&&in->gearValid&&in->gear<1){ s->pendAuto=1; s->pendAutoAt=in->now; }
         else if(wantAuto>=0){
             s->pendAuto=0; s->lastModeEmit=in->now; s->modeCause=1;
             o.act=GB_MODE_KEY; return o;
@@ -143,6 +164,12 @@ static GBOut GBStep(const GBCfg *c,GBState *s,const GBIn *in){
     /* THE OWED MANOEUVRE: automatic, but no gear engaged. The gear keys do nothing in
        automatic, so the only way through is manual -> first gear -> automatic again. Three
        presses, done once, and the driver just sees the car pull away. */
+    /* A DEBT THAT WAS NEVER PAID IS STALE, not patient. It exists to finish a switch to
+       automatic within a moment of it being asked for; if a few seconds have passed, whatever
+       made it true is no longer what anybody wants. Belt and braces for the cancel above - a
+       latch with no expiry is the shape every gearbox bug here has had. */
+    if(s->pendAuto && (gb_ms)(in->now - s->pendAutoAt) > GB_PENDAUTO_MS) s->pendAuto=0;
+
     if(s->pendAuto&&in->gearValid){
         if(in->mode==1&&in->gear<1){
             if((gb_ms)(in->now-s->lastModeEmit)>400){
@@ -187,10 +214,10 @@ static GBOut GBStep(const GBCfg *c,GBState *s,const GBIn *in){
     if(!c->closedLoop||!in->gearValid) return o;
 
     /* 5. automatic eats the gear keys, so either respect it or leave it - never fight it.
-       This is checked BEFORE "the gear already matches", because the mode is part of what the
+       This is checked BEFORE the gear already matching, because the mode is part of what the
        driver selected. Mafia starts every mission in automatic; selecting the gear the car
        happens to be in already is still a request for MANUAL, and skipping it on the grounds
-       that the number matched left Alex in an automatic he had not asked for. */
+       that the number matched left the driver in an automatic that was not requested. */
     if(in->mode==1){
         if(s->respectAuto){ o.blockedAuto=1; return o; }
         if(c->dikMode>0&&!s->engaged){

@@ -1,255 +1,197 @@
 English | [Русский](README.ru.md) | [Čeština](README.cs.md)
 
-# H-Shifter for Mafia: The City of Lost Heaven (2002) in 2026
+# ALXGtech Mafia 1 Mods
 
-Drive Mafia (2002) with a real H-pattern shifter. No AutoHotkey, no vJoy, no virtual
-controller: a plugin inside the game plus a small tool to bind your lever.
+Force feedback, a first-person driving camera and an H-shifter gearbox for the GOG release of
+Mafia: The City of Lost Heaven, in one utility that installs and removes them.
 
-<!-- ![banner](docs/img/banner.png) -->
+<!-- docs/img/banner.png - not in this release yet -->
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+## 🚀 Quick start
+
+Three mods for **Mafia: The City of Lost Heaven** - the first one - in a single small program.
+Too long to read? This is all of it:
+
+1. Download the `.zip` from **[Releases](../../releases)**.
+2. Unpack it.
+3. Copy `ALXGtech Mafia 1 Mods.exe` into your Mafia folder, next to `Game.exe`.
+4. Run it.
+5. Switch on the mods you want, inside the program, and play.
+
+| | mod | in this release |
+|:--:|---|---|
+| 🎮 | **Force feedback** - a full force model for a direct drive wheel | ✅ ready |
+| 👁️ | **First-person driving camera** - the driver's seat, and a field of view that fits 16:9 | ✅ ready |
+| 🕹️ | **H-shifter gearbox** - a real H-pattern shifter drives the game's own gears | ✅ ready |
+| 🥽 | **VR** | 🚧 work in progress - its tab is in the window, it installs nothing yet |
+
+Everything below is detail: what each mod does, what it writes into your game folder, and how to
+take it back out.
 
 ## Before you install
 
-- **Back up your saves.** Back up `<game folder>\savegame\` before installing. This mod
-  does not modify `Game.exe` or any game data file, but your own backup is the one you
-  control.
-- **Game version.** Developed and tested on the GOG release of Mafia v1.3 (English).
-  The gear offsets it reads are build specific, so on any other version or store
-  release the closed loop will not resolve. Use at your own risk.
-- **Other mods.** Compatibility with other mods has not been tested. Combining mods is
-  at your own risk. The mod is loaded by Ultimate ASI Loader, which loads any other
-  `.asi` mods you have alongside it; that is intended, but untested territory.
-- **Antivirus.** `gearbox-setup.exe` is an unsigned executable that writes into your
-  game folder, and the mod is a DLL loaded into the game. Some antivirus software may
-  flag either. Verify your download against the SHA-256 checksum published with the
-  release.
+- **Back up your saves.** They are in `<game>\savegame\`. The installer records every file it
+  writes and can undo all of it, but your own backup is the one you control.
+- **Version.** Built for the GOG release of Mafia v1.3 (build 16073). All eight language
+  editions ship an identical `Game.exe`, so any of them will do; it was play-tested on the
+  English one. The utility checks your `Game.exe` and says so when it is not the build
+  everything was tested on. Any other version or store release is at your own risk.
+- **Other mods.** Compatibility with other mods has not been tested. The bundled ASI loader
+  will load any other `.asi` mods you have, which is intended but untested territory.
+- **Antivirus.** `ALXGtech Mafia 1 Mods.exe` is an unsigned executable that writes files into a game
+  folder, so some antivirus software may flag it. Verify your download against the SHA-256
+  checksums published with the release.
 
 ## What it is
 
-Mafia's gearbox is sequential: the game knows "shift up" and "shift down" and nothing
-else. An H-pattern shifter reports the opposite - an absolute position, "the lever is
-in third", with no history. That mismatch is why an H-shifter cannot simply be bound in
-the game's options.
+Four mods in one window, each switched on or off from its own tab. Three of them ship today;
+the fourth says when it will not.
 
-This mod closes the gap inside the game. It reads your shifter through DirectInput,
-works out which gear you are asking for, and presses the gear keys the game itself has
-bound until the gearbox is in that gear. Nothing is emulated: no virtual joystick is
-created, no synthetic keystroke is sent to Windows.
+**🎮 Force feedback.** A complete DirectInput8 force set driven from the car's live state:
+centering that follows speed, a damper at a standstill, lightening as the tyres let go, curbs,
+tram rails, the roll of going off the road, and impacts. It is built for modern direct drive
+wheels, by people who drive on them, because the original does not behave the way a wheel
+should in 2026. The stock game does knock the wheel on a collision; this replaces that with a
+full force model. Settings are re-read while the game runs, so a change on the Force Feedback
+tab is felt on the next corner and not after a restart.
 
-The important part is that it **reads the gear back from the game** after every step,
-at `[car+0x58]+0x5D0` on the GOG build. That closed loop is what makes it reliable.
-There is no counter of its own to drift, so a refused shift cannot desynchronise it,
-and a car with two gears simply stops moving when it runs out - selecting fourth on a
-two-gear truck leaves it in second instead of corrupting the box. No per-vehicle gear
-table is needed, and none exists.
+**👁️ First-person driving camera.** The camera sits in the driver's seat instead of behind the
+car. On foot is untouched. The seat position ships at the place it was settled at the wheel and
+can be moved with the keys below while you drive; where you leave it is where it stays.
+Switching this mod on also widens the game's field of view from 70 to 86 degrees, which is what
+fits a 16:9 screen - 70 is at its worst from the driver's seat. The angle is a slider on the
+same tab, and switching the mod off puts the original bytes back.
 
-It also reads the game's manual/automatic flag (`[car+0x58]+0x53C`) and never writes
-it. If you switch to automatic - with the wheel, with the keyboard, however - that is
-your decision, and the mod goes hands off until you move the lever again.
+**🕹️ H-shifter gearbox.** A real H-pattern shifter drives Mafia's own gear controls, so a gate is
+a gear. It reads the shifter through DirectInput, hides the bound buttons from the game, and
+checks the game's own gear after every shift, so it cannot drift out of step and it clamps to
+each car's real gear count without a per-car table.
 
-Two files land in your game folder and `Game.exe` is not modified. An off switch in the
-tool renames the plugin, so the next launch is completely stock.
+A fourth mod, **🥽 VR**, is **🚧 coming soon**. Its tab is in the window so that nobody has to wonder
+whether it was forgotten, and it says the same thing: not finished, installs nothing yet.
 
 ## Requirements
 
-| | |
-|---|---|
-| Game | Mafia: The City of Lost Heaven, GOG release v1.3 (English) - the only tested build |
-| Hardware | An H-pattern shifter Windows sees as a DirectInput device. A wheelbase can host the gearbox-mode control; up to four devices are supported |
-| Software | An ASI loader in the game folder - Ultimate ASI Loader as `dinput8.dll`. The Force Feedback mod's patcher installs one; otherwise install it yourself |
-| In-game | Gear up, gear down and gearbox mode must be bound to keyboard keys in Mafia's own control options. The mod presses those keys |
+- Windows, 32-bit or 64-bit.
+- Mafia: The City of Lost Heaven, GOG release, v1.3 build 16073 (`Game.exe`, 2 355 200 bytes,
+  md5 `b500437f340b8a2f1e847e10bb974a06`). Any language edition.
+- Force feedback: a DirectInput force feedback wheel. Developed and tested on a direct drive
+  base.
+- H-shifter: an H-pattern shifter that Windows sees as a game controller.
+- Nothing else. No AutoHotkey, no vJoy, no virtual controller, no .NET runtime.
 
 ## Installation
 
-1. Make sure an ASI loader is present: `dinput8.dll` next to `Game.exe`.
-2. Download the release archive and unpack the `gearbox hshifter setup` folder into
-   your game folder, so it sits next to `Game.exe`.
-3. Run `gearbox-setup.exe` from inside that folder. It finds `Game.exe` one level up,
-   so nothing has to be configured.
-4. Bind your rig. Click a row, then press what you want on the device:
-   - rows for gears 1 to 6, reverse, neutral and the gearbox-mode control capture
-     **device buttons**, from any attached device;
-   - the last three rows capture **keyboard keys** - the gear up, gear down and mode
-     keys as they are bound inside Mafia. The mod presses these, so they must match.
-   - Neutral is an explicit choice: bind a button, or declare that neutral is your
-     lever's rest position. Both kinds of hardware exist and there is no default.
-5. Press **Install**. It copies `gearbox_hook.asi` into the game root and writes your
-   settings to `gearbox hshifter setup\gearbox.ini`.
-6. Launch the game and drive.
+1. Download the `.zip` from [Releases](../../releases) and unpack it.
+2. Copy `ALXGtech Mafia 1 Mods.exe` into your Mafia folder, next to `Game.exe`.
+3. Run it. The header line shows which folder it is working on and which build it found; use
+   `Choose...` if it picked the wrong one.
+4. Open a tab and press `Enable this mod`. The switch is the install; there is no Save button
+   and nothing else to press.
+5. Start the game.
 
-The resulting layout:
+To remove a mod, press `Disable this mod` on its tab. The ASI loader leaves with the last mod
+that needed it, and the utility's own folder goes with it.
 
-```
-<game folder>\
-    Game.exe
-    dinput8.dll                       ASI loader, not part of this mod
-    gearbox_hook.asi                  the mod
-    gearbox hshifter setup\
-        gearbox-setup.exe             the binding tool
-        gearbox.ini                   your settings
-        gearbox_hook.bin              the mod's log, written while you play
-```
+### What enabling a mod puts in the game folder
 
-To uninstall: the tool's switch turns the mod off by renaming the plugin, and the next
-launch is stock. Delete the two items to remove it completely. Nothing else was
-touched.
+| mod | files |
+|---|---|
+| every mod | `dinput8.dll` (Ultimate ASI Loader) |
+| Force feedback | `mafia_ffb.asi` |
+| First person | `mafia_fp.asi`, `mafia_fp.ini`, and 12 bytes inside `Game.exe` (the field of view) |
+| H-shifter | `gearbox_hook.asi`, `ALXG mods\gearbox hshifter setup\gearbox.ini` |
+
+The field of view is the only thing here that touches `Game.exe`, and it is three four-byte
+floats, same length, nothing moved. `Game.exe.bak` is made before the first one is written, the
+original bytes are recorded, and switching the camera off writes them back. No game data is
+touched at all: no `.dta` archive, no `tables\`, no `sounds\`, nothing localized.
+
+Everything of ours lives in one folder, `<game>\ALXG mods\` - the journal, the gearbox's
+settings and the force feedback's. Only the three `.asi` files and the ASI loader sit in the
+game root, because the loader reads no other folder.
+
+Every write is recorded first, in `<game>\ALXG mods\install.log`, with anything it displaced
+kept beside it in `original\`. Uninstall works from that record, one line at a time, so it can
+put back exactly what was there. A file you have edited yourself is recognised as yours, said
+out loud, and left alone.
+
+### Manual install
+
+If you would rather not run the utility, `manual-install\` holds the same files. Copy them into
+the game folder in the layout shown there. You then have no journal and no uninstall; delete
+the files by hand to remove the mods. The two `.ini` files are settings, so copy them only if
+you do not already have your own.
 
 ## Usage
 
-Move the lever and the gearbox follows. There is nothing to hold and nothing to time.
+While driving, with the first-person camera on:
 
-| Control | Behaviour |
+| key | what |
 |---|---|
-| A gear gate | Acted on immediately. The mod shifts until the game reports that gear, or until the gearbox refuses to go further |
-| Rest position (if neutral is unbound) | Neutral after 1100 ms. The delay exists because the lever passes through the rest position on the way between gates; measured gate-to-gate travel is 0.22 to 0.94 s, a deliberate neutral is 1.1 s or more |
-| Leaving reverse | Exempt from that delay - that move goes through neutral by necessity |
-| Gearbox mode control | Switches the game between manual and automatic. Works as a button or as a latching switch; the tool has a setting for which one you have |
+| F1 / F2 | eye up / down, 2 cm a press |
+| F3 / F4 | eye left / right |
+| F5 / F6 | eye forward / back |
+| F9 / F10 | near clip plane out / in |
 
-Buttons you bind are suppressed from the game, so a held neutral button does not
-dominate the game's own control-binding screen and gear buttons do not trigger
-unrelated actions.
+The seat you settle on is written back to `mafia_fp.ini`, so it survives a relaunch. The same
+values are on the First person tab, together with the near plane, the horizon lock, where the
+camera aims, and the field of view. Any of those keys can be rebound there, and more controls exist unbound in
+`mafia_fp.ini`.
 
-If you switch the game into automatic, the mod stops driving the box until you move the
-lever again. Moving the lever always means "I want this gear", so it returns to manual.
+The H-shifter is bound on its own tab: press the button that corresponds to each gate, then
+start the game. Gearbox changes apply after a restart of Mafia, which the tab says on screen.
 
 ## Compatibility
 
-| Version | Status |
+| tested | result |
 |---|---|
-| Mafia v1.3, GOG release (English) | Developed and tested here |
-| Steam release | Untested. The offsets are build specific and will not resolve |
-| Other language builds, v1.0 - v1.2 | Untested |
+| GOG v1.3 build 16073, English | tested, this is the build everything was measured on |
+| GOG v1.3, Russian | installed and started on a fresh install: byte-identical `Game.exe`, all three mods loaded |
+| GOG v1.3, the other six languages | identical `Game.exe`, so expected to work, not play-tested |
+| Steam and other releases | untested. The utility will say it does not recognise the build |
+| other mods | untested |
 
-`Game.exe` is not modified, so nothing needs to be restored and no file verification
-will fail. The mod is one `.asi` among however many you have; the loader loads them
-all.
+Only one `dinput8.dll` can live in a game folder. If you already have an ASI loader there, the
+existing one is backed up before it is replaced, and put back on uninstall.
 
-## Known issues / FAQ
+## Known issues
 
-### Known issues
-
-- **Verification is not finished.** Seven test drives settled the design and fixed four
-  bugs; the eighth drive, which re-checks every fix together on real hardware, has not
-  been signed off yet. Treat this as a working mod under test, not a finished one.
-- **The closed loop is gated per build.** On a build whose gear offset has not been
-  verified, `closed_loop=0` in the ini keeps the mod injecting keys open loop while the
-  log records whether the address chain resolved. Reliable behaviour needs the loop on.
-- **Your in-game key bindings must be correct in the tool.** The mod shifts by pressing
-  the keys the game has bound. Bind different keys in Mafia and forget to update the
-  tool, and nothing happens at all.
-- **Buffered keyboard input is not implemented.** The mod injects into
-  `IDirectInputDevice8::GetDeviceState`. If a build reads its keyboard through
-  `GetDeviceData` instead, the log shows it and no shift is delivered.
-- **Automatic mode fights you by design.** If the game is in automatic and the mod is
-  asked for a gear, the log says so plainly rather than hiding it.
-
-### FAQ
-
-**Who is this for?**
-Anyone who owns a real H-pattern shifter, or any DirectInput device with enough
-buttons, and wants Mafia's gearbox to follow the lever's position directly - no
-virtual controller, no scripting language, nothing to configure inside the game
-beyond the gear-up/gear-down keys it already has.
-
-**How do I get started?**
-Make sure an ASI loader is present, unpack the release into your game folder, run
-`gearbox-setup.exe`, bind your lever's gates and confirm the keys Mafia itself uses
-for gear up/down, click Install, and drive. Full steps in
-[Installation](#installation).
-
-**Which game version does it run on?**
-Only the GOG release of Mafia v1.3, English, is tested - it is what the documented
-memory offsets were read on. On any other version or store release the closed loop
-will not resolve, and the mod will not behave reliably.
-
-**What does it give me?**
-Real sequential shifting driven by where your lever actually is, closed against the
-game's own gear so nothing can desync it, and automatic clamping to each car's real
-gear count - a two-gear truck simply stops responding past 2nd instead of corrupting
-the gearbox. `Game.exe` is never modified.
-
-**What does it NOT give me?**
-- No force feedback - that is a separate mod, [Force Feedback (Real Driving
-  Mod)](#related-mods), not yet published.
-- No VR - also a separate mod, [VR Mod](#related-mods).
-- No clutch simulation and no engine/RPM modelling: it only presses the gear-up and
-  gear-down keys the game already has bound.
-- No support beyond GOG v1.3 English (see above).
-- Not a finished product yet: the eighth verification drive has not been signed off
-  - see Known issues above.
-
-## Related mods
-
-Three mods for the same game, developed together. They are compatible with each other
-in a single installation, but each does a different job:
-
-- **H-Shifter** - this repository.
-- **Force Feedback (Real Driving Mod)** - force feedback for steering wheels, which the
-  game never sends on its own. Its patcher also installs the ASI loader this mod needs.
-  Not yet published; the link lands here when it is.
-- **VR Mod** - stereoscopic VR with head tracking. Not yet published.
+- A car ramming you from behind is barely felt. It is measured rather than guessed: no channel
+  we have reports it yet, and loosening the impact gate to catch it brings back false kicks that
+  were worse. It is a known bug and it is not fixed in this release.
+- The game's damage counter on this build gives us nothing usable, so being shot at is not felt
+  through the wheel.
+- The camera keys are keyboard only in this version. A wheel button cannot be bound to them yet.
+- The field of view slider takes effect when Mafia next starts, unlike everything else on that
+  tab, which reaches a running game in about a second.
+- The VR tab installs nothing - that mod is not finished.
+- The utility has no icon of its own yet.
 
 ## For developers
 
-The source is open on purpose. Everything the mod knows about the game is in this
-repository - the offsets, the injection method, and the decision logic.
+The sources are open, including the mods themselves and the installer. Built with LLVM-MinGW
+for 32-bit Windows; the build scripts are in `tools\`. The mods are ASI plugins: the game's
+`LS3DF.dll` imports `DINPUT8.dll`, Windows resolves that from the game folder, and the bundled
+Ultimate ASI Loader loads every `.asi` beside it. From there each mod reads the engine's own
+car state at known addresses and either writes forces to the wheel, moves the camera, or drives
+the gear controls.
 
-| File | What it is |
-|---|---|
-| `src/gearbox_hook8.c` | the mod: DirectInput hooks, key injection, button suppression, the closed loop |
-| `src/gearbox_logic.h` | the decision core, shared with the test suite so tests cover the shipped code |
-| `src/gearbox_gui.c` | `gearbox-setup.exe`: the binding tool, plain Win32, no framework |
-| `tests/test_gearbox.c` | offline simulation of the shift logic |
-
-Build with LLVM-MinGW, 32-bit:
-
-```
-i686-w64-mingw32-clang -O2 -m32 -mwindows -o gearbox-setup.exe gearbox_gui.c -lkernel32 -luser32 -lcomdlg32
-```
-
-How the shift is delivered: the game reads its keyboard through DirectInput 8, so the
-mod creates a keyboard device of its own purely to reach the device class vtable,
-patches `GetDeviceState`, and sets the bit of the configured scancode in the 256-byte
-buffer the game is about to read. A 256-byte buffer is what identifies the keyboard;
-the mod's own devices are excluded. Setting a bit and clearing one are the same code
-path, which is how button suppression works on the wheel side.
-
-Documented offsets on the GOG build, all read only except the input state:
-
-| What | Where |
-|---|---|
-| current gear (commanded, not speed derived) | `[car+0x58]+0x5D0` |
-| gear shadow, one cycle behind - a shift in flight | `[car+0x58]+0x5D4` |
-| manual / automatic flag, 0 = manual | `[car+0x58]+0x53C` |
-| key-binding action table, 63 records of `char[16]` + `DWORD` | VA `0x624330..0x624808` |
-| GEARUP / GEARDOWN action ids | `0x2D` / `0x2F` |
-
-The action ids are there because injecting the action rather than the key is the
-planned upgrade: it would free the user from binding gear keys at all. The injection
-point for it has not been derived.
-
-See [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md) for the closed loop, the refusal
-handling, and the four bugs that shaped them. Pull requests and forks are welcome.
-
-Want to build the same kind of closed-loop input translator for a different game?
-[docs/PORTING.md](docs/PORTING.md) writes up the method - the injection technique, how to
-find your own game's equivalent of "current gear," and how to test the decision logic
-before touching the real game - without reproducing anything from Mafia's disassembly.
+Pull requests and forks are welcome, including porting the technique to a different game.
 
 ## Credits
 
-- [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader) by
-  ThirteenAG - the loader that makes `.asi` plugins possible. Not distributed here.
+- [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader) by ThirteenAG, bundled
+  as `dinput8.dll`. See `THIRD-PARTY.md`.
+- Everything else is this project's own work.
 
-## License
+## License and legal
 
-MIT - see [LICENSE](LICENSE). It covers this project's own code only.
+This project's own code is MIT licensed. See `LICENSE`.
 
-This mod requires a legal copy of Mafia: The City of Lost Heaven. No game files or
-assets are included or distributed.
+This mod requires a legal copy of Mafia: The City of Lost Heaven. No game files or assets are
+included or distributed.
 
-This project is not affiliated with or endorsed by Take-Two Interactive, 2K, or
-Illusion Softworks. Mafia is a trademark of its respective owners. The MIT license
-covers this project's own code only; the game and its assets remain the property of
-their owners.
+This project is not affiliated with or endorsed by Take-Two Interactive, 2K, or the former
+Illusion Softworks. Mafia is a trademark of its owners. The MIT license covers this project's
+own code only; the game and its assets remain the property of their owners.

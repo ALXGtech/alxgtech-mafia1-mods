@@ -1,258 +1,197 @@
 [English](README.md) | [Русский](README.ru.md) | Čeština
 
-# H-Shifter pro Mafia: The City of Lost Heaven
+# ALXGtech Mafia 1 Mods
 
-Hrajte Mafii (2002) se skutečnou řadicí pákou s H-schématem. Bez AutoHotkey, bez vJoy,
-bez virtuálního ovladače: zásuvný modul uvnitř hry a malý nástroj pro nastavení páky.
+Silová zpětná vazba volantu, kamera z pohledu řidiče a H-řadička pro GOG vydání hry Mafia: The
+City of Lost Heaven. Jeden nástroj, který to vše nainstaluje i odinstaluje.
 
-<!-- ![banner](docs/img/banner.png) -->
+<!-- docs/img/banner.png - not in this release yet -->
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+## 🚀 Rychlý start
 
-## Před instalací
+Tři módy pro **Mafia: The City of Lost Heaven** - tu první - v jednom malém programu.
+Příliš dlouhé na čtení? To je všechno:
 
-- **Zazálohujte si uložené pozice.** Před instalací zkopírujte
-  `<složka hry>\savegame\`. Mód nemění `Game.exe` ani žádný datový soubor hry, spolehlivá
-  je však pouze záloha, kterou máte pod vlastní kontrolou.
-- **Verze hry.** Vyvinuto a testováno na GOG vydání hry Mafia verze 1.3 (anglická
-  verze). Offsety, ze kterých se čte zařazený stupeň, jsou vázané na konkrétní sestavení,
-  takže na jiných verzích a vydáních se uzavřená smyčka nedohledá. Použití je na vlastní
-  nebezpečí.
-- **Jiné módy.** Kompatibilita s jinými módy nebyla testována. Kombinování módů je na
-  vlastní nebezpečí. Mód načítá Ultimate ASI Loader, který spolu s ním načte i jakékoli
-  další vaše `.asi` módy; je to záměr, ale takové kombinace testovány nebyly.
-- **Antivirus.** `gearbox-setup.exe` je nepodepsaný spustitelný soubor, který zapisuje do
-  složky hry, a samotný mód je knihovna načtená do procesu hry. Některé antivirové
-  programy mohou označit kterýkoli z nich. Ověřte stažený soubor pomocí kontrolního
-  součtu SHA-256 zveřejněného u vydání.
+1. Stáhněte `.zip` ze sekce **[Releases](../../releases)**.
+2. Rozbalte jej.
+3. Zkopírujte `ALXGtech Mafia 1 Mods.exe` do složky s Mafií, vedle `Game.exe`.
+4. Spusťte jej.
+5. V programu zapněte módy, které chcete, a hrajte.
+
+| | mód | v tomto vydání |
+|:--:|---|---|
+| 🎮 | **Silová zpětná vazba** - kompletní sada sil pro direct drive volant | ✅ hotovo |
+| 👁️ | **Kamera z pohledu řidiče** - místo řidiče a zorné pole odpovídající 16:9 | ✅ hotovo |
+| 🕹️ | **H-řadička** - skutečná kulisa ovládá vlastní převody hry | ✅ hotovo |
+| 🥽 | **VR** | 🚧 rozpracováno - záložka je v okně, zatím nic neinstaluje |
+
+Vše níže jsou podrobnosti: co jednotlivé módy dělají, co zapisují do složky hry a jak je vrátit
+zpět.
+
+## Než začnete instalovat
+
+- **Zazálohujte si uložené pozice.** Jsou v `<game>\savegame\`. Instalátor zaznamenává každý
+  soubor, který zapíše, a umí vše vrátit zpět, ale vaše vlastní záloha je ta, kterou máte pod
+  kontrolou.
+- **Verze.** Postaveno pro GOG vydání Mafia v1.3 (build 16073). Všech osm jazykových vydání má
+  identický `Game.exe`, takže poslouží kterékoli; hrálo se s anglickým. Nástroj váš `Game.exe`
+  ověří a řekne, pokud to není sestavení, na kterém bylo vše měřeno. Jakákoli jiná verze nebo
+  vydání z jiného obchodu je na vlastní riziko.
+- **Ostatní módy.** Kompatibilita s jinými módy nebyla testována. Přibalený ASI loader načte i
+  vaše ostatní `.asi` módy, což je záměr, ale neověřený.
+- **Antivirus.** `ALXGtech Mafia 1 Mods.exe` je nepodepsaný spustitelný soubor, který zapisuje do
+  složky hry, takže jej některé antiviry mohou označit. Ověřte stažený soubor proti kontrolním
+  součtům SHA-256 zveřejněným u vydání.
 
 ## Co to je
 
-Převodovka ve hře Mafia je sekvenční: hra zná "zařadit vyšší" a "zařadit nižší" a nic
-dalšího. Páka s H-schématem hlásí pravý opak - absolutní polohu, "páka je na trojce",
-bez jakékoli historie. Kvůli tomuto nesouladu nelze H-páku v nastavení hry jednoduše
-přiřadit.
+Čtyři módy v jednom okně, každý se zapíná a vypíná na vlastní záložce. Tři fungují už dnes;
+čtvrtý poctivě říká, že zatím ne.
 
-Tento mód rozdíl překlenuje uvnitř hry. Čte vaši páku přes DirectInput, určí, který
-stupeň požadujete, a tiskne klávesy řazení přiřazené v samotné hře, dokud převodovka
-není na daném stupni. Nic se neemuluje: nevytváří se žádný virtuální joystick a do
-Windows se neposílají žádné syntetické stisky.
+**🎮 Silová zpětná vazba.** Kompletní sada sil DirectInput8 řízená živým stavem vozu: dostředivá
+síla podle rychlosti, tlumič při stání, odlehčení při ztrátě přilnavosti, obrubníky, tramvajové
+koleje, houpání mimo silnici a nárazy. Je stavěná pro dnešní direct drive volanty lidmi, kteří
+na nich jezdí, protože originál se nechová tak, jak by se volant v roce 2026 chovat měl.
+Původní hra volantem při srážce skutečně trhne; tohle to nahrazuje plným modelem sil. Nastavení
+se načítá za běhu, takže změna na záložce Force Feedback je cítit v další zatáčce, ne až po
+restartu.
 
-Podstatné je, že mód po každém kroku **čte zařazený stupeň zpět ze hry**, na adrese
-`[car+0x58]+0x5D0` u sestavení GOG. Právě tato uzavřená smyčka zajišťuje spolehlivost.
-Žádné vlastní počítadlo, které by se mohlo rozejít, neexistuje, takže odmítnuté řazení
-nemůže rozhodit stav, a vůz se dvěma stupni prostě přestane řadit, až mu dojdou: volba
-čtyřky na dvoustupňovém nákladním voze jej nechá na dvojce, místo aby poškodila
-převodovku. Tabulka převodů pro každý vůz není potřeba a neexistuje.
+**👁️ Kamera z pohledu řidiče.** Kamera sedí na místě řidiče, ne za vozem. Chůze zůstává beze
+změny. Posazení je nastavené tam, kde bylo vyladěno za volantem, a lze s ním hýbat klávesami
+přímo za jízdy; kde je necháte, tam zůstane. Zapnutí tohoto módu zároveň rozšíří zorné pole
+hry ze 70 na 86 stupňů, což odpovídá obrazovce 16:9 - a 70 vypadá nejhůř právě z místa řidiče.
+Úhel se nastavuje posuvníkem na téže záložce a vypnutí módu vrátí původní bajty.
 
-Mód také čte příznak ruční/automatické převodovky (`[car+0x58]+0x53C`) a nikdy do něj
-nezapisuje. Pokud přepnete na automat - volantem, klávesnicí, čímkoli -, je to vaše
-rozhodnutí a mód se drží stranou, dokud znovu nepohnete pákou.
+**🕹️ H-řadička.** Skutečná kulisa ovládá vlastní převody Mafie, takže kulisa znamená převod. Módul
+čte řadičku přes DirectInput, skryje hře přiřazená tlačítka a po každém zařazení si ověří
+převod přímo ve hře, takže se nemůže rozejít se skutečností a sám se omezí na skutečný počet
+převodů daného vozu bez tabulky pro každý z nich.
 
-Do složky hry přibudou dva soubory a `Game.exe` se nemění. Vypínač v nástroji přejmenuje
-zásuvný modul, takže při dalším spuštění je hra zcela původní.
+Čtvrtý mód, **🥽 VR**, je **🚧 již brzy**. Jeho záložka v okně je proto, aby nikdo nemusel přemýšlet,
+zda se na něj nezapomnělo, a říká totéž: není hotový, zatím nic neinstaluje.
 
 ## Požadavky
 
-| | |
-|---|---|
-| Hra | Mafia: The City of Lost Heaven, vydání GOG verze 1.3 (anglická verze) - jediné testované sestavení |
-| Hardware | Řadicí páka s H-schématem, kterou Windows vidí jako zařízení DirectInput. Ovladač režimu převodovky může být na základně volantu; podporována jsou až čtyři zařízení |
-| Software | ASI loader ve složce hry - Ultimate ASI Loader jako `dinput8.dll`. Instaluje jej patcher módu Force Feedback; jinak si jej nainstalujte sami |
-| Ve hře | Řazení nahoru, dolů a režim převodovky musí být v nastavení ovládání hry Mafia přiřazeny klávesám. Mód tiskne právě je |
+- Windows, 32 nebo 64 bitů.
+- Mafia: The City of Lost Heaven, vydání GOG, v1.3 build 16073 (`Game.exe`, 2 355 200 bajtů,
+  md5 `b500437f340b8a2f1e847e10bb974a06`). Libovolná jazyková verze.
+- Silová zpětná vazba: volant s DirectInput force feedback. Vyvíjeno a testováno na direct
+  drive základně.
+- H-řadička: kulisová řadička, kterou Windows vidí jako herní ovladač.
+- Nic dalšího. Žádné AutoHotkey, žádné vJoy, žádný virtuální ovladač, žádný .NET.
 
 ## Instalace
 
-1. Ujistěte se, že je přítomen ASI loader: `dinput8.dll` vedle `Game.exe`.
-2. Stáhněte archiv vydání a rozbalte složku `gearbox hshifter setup` do složky hry tak,
-   aby stála vedle `Game.exe`.
-3. Spusťte `gearbox-setup.exe` z této složky. Soubor `Game.exe` najde o úroveň výš,
-   takže není třeba nic nastavovat.
-4. Přiřaďte své vybavení. Klikněte na řádek a poté stiskněte, co si přejete:
-   - řádky pro stupně 1 až 6, zpátečku, neutrál a ovladač režimu převodovky zachytávají
-     **tlačítka zařízení**, z libovolného připojeného zařízení;
-   - poslední tři řádky zachytávají **klávesy** - řazení nahoru, dolů a režim tak, jak
-     jsou přiřazeny uvnitř hry Mafia. Mód tiskne právě je, takže se musí shodovat.
-   - Neutrál je výslovná volba: přiřaďte tlačítko, nebo určete, že neutrál je klidová
-     poloha vaší páky. Existuje hardware obojího druhu a žádná výchozí hodnota není.
-5. Stiskněte **Install**. Nástroj zkopíruje `gearbox_hook.asi` do kořene hry a zapíše
-   vaše nastavení do `gearbox hshifter setup\gearbox.ini`.
-6. Spusťte hru a jeďte.
+1. Stáhněte `.zip` ze sekce [Releases](../../releases) a rozbalte jej.
+2. Zkopírujte `ALXGtech Mafia 1 Mods.exe` do složky s Mafií, vedle `Game.exe`.
+3. Spusťte jej. V záhlaví je vidět, se kterou složkou pracuje a jaké sestavení našel; pokud je
+   složka špatná, použijte `Choose...`.
+4. Otevřete záložku a stiskněte `Enable this mod`. Přepínač je instalace; žádné tlačítko uložit
+   neexistuje a nic dalšího mačkat netřeba.
+5. Spusťte hru.
 
-Výsledné uspořádání:
+Mód odeberete stisknutím `Disable this mod` na jeho záložce. ASI loader odchází s posledním
+módem, který jej potřeboval, a s ním i vlastní složka nástroje.
 
-```
-<složka hry>\
-    Game.exe
-    dinput8.dll                       ASI loader, není součástí tohoto módu
-    gearbox_hook.asi                  mód
-    gearbox hshifter setup\
-        gearbox-setup.exe             nástroj pro přiřazení
-        gearbox.ini                   vaše nastavení
-        gearbox_hook.bin              protokol módu, zapisovaný za hry
-```
+### Co zapnutí módu přidá do složky hry
 
-Odinstalace: vypínač v nástroji mód vypne přejmenováním zásuvného modulu a další
-spuštění je původní. Pro úplné odstranění smažte obě přidané položky. Ničeho jiného se
-mód nedotkl.
-
-## Použití
-
-Pohnete pákou a převodovka ji následuje. Není co držet ani co časovat.
-
-| Ovládání | Chování |
+| mód | soubory |
 |---|---|
-| Poloha stupně | Provede se okamžitě. Mód řadí, dokud hra nehlásí daný stupeň nebo dokud převodovka odmítne pokračovat |
-| Klidová poloha (není-li neutrál přiřazen) | Neutrál po 1100 ms. Prodleva existuje proto, že páka klidovou polohou prochází cestou mezi stupni; naměřený přejezd trvá 0,22 až 0,94 s, zatímco záměrný neutrál 1,1 s a více |
-| Odjezd ze zpátečky | Prodleva se neuplatní - tento pohyb vede přes neutrál z podstaty věci |
-| Ovladač režimu převodovky | Přepíná hru mezi ruční a automatickou převodovkou. Funguje jako tlačítko i jako aretovaný přepínač; nástroj má nastavení, co z toho máte |
+| každý mód | `dinput8.dll` (Ultimate ASI Loader) |
+| Silová zpětná vazba | `mafia_ffb.asi` |
+| Pohled řidiče | `mafia_fp.asi`, `mafia_fp.ini` a 12 bajtů uvnitř `Game.exe` (zorné pole) |
+| H-řadička | `gearbox_hook.asi`, `ALXG mods\gearbox hshifter setup\gearbox.ini` |
 
-Tlačítka, která přiřadíte, jsou před hrou skryta, takže držené tlačítko neutrálu
-neovládne obrazovku přiřazení ovládání ve hře a tlačítka stupňů nespouštějí nesouvisející
-akce.
+Zorné pole je jediná věc, která se zde dotýká `Game.exe`, a jsou to tři čtyřbajtové floaty,
+stejné délky, nic se neposouvá. `Game.exe.bak` vznikne před prvním zápisem, původní bajty se
+zaznamenají a vypnutí kamery je zapíše zpět. Herních dat se to nedotýká vůbec: žádný archiv
+`.dta`, žádné `tables\`, žádné `sounds\`, nic lokalizovaného.
 
-Pokud hru přepnete do automatu, mód přestane převodovku řídit, dokud znovu nepohnete
-pákou. Pohyb páky vždy znamená "chci tento stupeň", takže vrací ruční režim.
+Vše naše je v jediné složce, `<game>\ALXG mods\` - záznam instalace, nastavení řadičky i
+silové zpětné vazby. V kořeni hry zůstávají jen tři soubory `.asi` a ASI loader, protože
+žádnou jinou složku loader nečte.
+
+Každý zápis se nejprve zaznamená do `<game>\ALXG mods\install.log` a to, co vytlačil, se uloží
+vedle do `original\`. Odinstalace jde podle tohoto záznamu, řádek po řádku, takže vrátí přesně
+to, co tam bylo. Soubor, který jste si sami upravili, je rozpoznán jako váš, je to řečeno
+nahlas a zůstane nedotčen.
+
+### Ruční instalace
+
+Pokud nástroj spouštět nechcete, tytéž soubory jsou v `manual-install\`. Zkopírujte je do
+složky hry v rozložení, které tam uvidíte. Pak nemáte žádný záznam ani odinstalaci - soubory
+smažete ručně. Oba soubory `.ini` jsou nastavení, kopírujte je jen tehdy, pokud vlastní ještě
+nemáte.
+
+## Používání
+
+Za jízdy se zapnutou kamerou z pohledu řidiče:
+
+| klávesa | co dělá |
+|---|---|
+| F1 / F2 | oči výš / níž, 2 cm na stisk |
+| F3 / F4 | oči doleva / doprava |
+| F5 / F6 | oči dopředu / dozadu |
+| F9 / F10 | bližší ořezová rovina dál / blíž |
+
+Posazení, na kterém se ustálíte, se zapíše zpět do `mafia_fp.ini` a přežije restart. Tytéž
+hodnoty jsou na záložce First person spolu s bližší ořezovou rovinou, zámkem horizontu,
+náklonem kamery a zorným polem. Kteroukoli z těchto kláves tam lze přemapovat a v `mafia_fp.ini` jsou další,
+zatím nepřiřazené.
+
+H-řadička se nastavuje na vlastní záložce: stiskněte tlačítko odpovídající každé kulise a pak
+spusťte hru. Změny řadičky se projeví až po restartu Mafie, což záložka na obrazovce říká.
 
 ## Kompatibilita
 
-| Verze | Stav |
+| testováno | výsledek |
 |---|---|
-| Mafia v1.3, vydání GOG (anglická verze) | Vyvinuto a testováno |
-| Vydání Steam | Netestováno. Offsety jsou vázané na sestavení a nedohledají se |
-| Ostatní jazykové verze, v1.0 - v1.2 | Netestováno |
+| GOG v1.3 build 16073, anglicky | testováno, na tomto sestavení bylo vše měřeno |
+| GOG v1.3, ruská verze | nainstalováno a spuštěno na čisté instalaci: bajtově shodný `Game.exe`, všechny tři módy se načetly |
+| GOG v1.3, ostatních šest jazyků | identický `Game.exe`, takže se očekává funkčnost, ve hře netestováno |
+| Steam a další vydání | netestováno. Nástroj řekne, že sestavení nepoznává |
+| ostatní módy | netestováno |
 
-`Game.exe` se nemění, takže není co obnovovat a kontrola integrity souborů nic
-nenajde. Mód je jedním z `.asi`, kolik jich máte; loader načte všechny.
+Ve složce hry může být jen jeden `dinput8.dll`. Pokud tam už ASI loader máte, ten stávající se
+před nahrazením zazálohuje a při odinstalaci vrátí.
 
-## Známé problémy / FAQ
+## Známé problémy
 
-### Známé problémy
-
-- **Ověřování není dokončeno.** Sedm testovacích jízd určilo podobu řešení a odstranilo
-  čtyři chyby; osmá jízda, která znovu prověřuje všechny opravy najednou na skutečném
-  hardwaru, zatím nebyla potvrzena. Berte to jako fungující mód ve fázi zkoušek, nikoli
-  jako hotový.
-- **Uzavřená smyčka se povoluje podle sestavení.** U sestavení, kde offset stupně není
-  ověřen, ponechá `closed_loop=0` v souboru ini mód pracovat v otevřené smyčce, zatímco
-  protokol zaznamená, zda se řetěz adres dohledal. Spolehlivé chování vyžaduje zapnutou
-  smyčku.
-- **Vaše herní přiřazení kláves musí být v nástroji uvedena správně.** Mód řadí
-  stisknutím kláves přiřazených ve hře. Přiřaďte v Mafii jiné klávesy a zapomeňte
-  aktualizovat nástroj - nestane se vůbec nic.
-- **Bufferovaný vstup z klávesnice není implementován.** Mód vstupuje do
-  `IDirectInputDevice8::GetDeviceState`. Pokud sestavení čte klávesnici přes
-  `GetDeviceData`, protokol to ukáže a řazení se nedoručí.
-- **Automatický režim si s módem ze své podstaty odporuje.** Je-li hra v automatu a mód
-  má zařadit stupeň, protokol to řekne otevřeně, místo aby to skrýval.
-
-### FAQ
-
-**Pro koho je tento mód?**
-Pro každého, kdo vlastní skutečnou řadicí páku s H-schématem, nebo jakékoli zařízení
-DirectInput s dostatkem tlačítek, a chce, aby převodovka Mafie přímo sledovala polohu
-páky - bez virtuálního ovladače, bez skriptovacího jazyka, bez jakéhokoli nastavování
-uvnitř hry nad rámec kláves řazení, které už má přiřazené.
-
-**Jak začít?**
-Ujistěte se, že máte ASI loader, rozbalte archiv vydání do složky hry, spusťte
-`gearbox-setup.exe`, přiřaďte polohy své páky a ověřte klávesy, kterými Mafia sama
-řadí nahoru/dolů, stiskněte Install a jeďte. Celý postup je v části
-[Instalace](#instalace).
-
-**Na kterých verzích hry to funguje?**
-Testováno pouze na GOG vydání Mafia verze 1.3, anglická verze - právě na něm byly
-zjištěny zdokumentované offsety paměti. Na jiné verzi nebo vydání se uzavřená smyčka
-nedohledá a spolehlivé chování nelze čekat.
-
-**Co mi to dá?**
-Skutečné sekvenční řazení podle skutečné polohy páky, uzavřené na vlastní zařazený
-stupeň hry tak, že se s ním nelze rozejít, a automatické omezení na skutečný počet
-stupňů daného vozu - dvoustupňový nákladní vůz prostě přestane reagovat po dvojce,
-místo aby poškodil převodovku. `Game.exe` se přitom nikdy nemění.
-
-**Co mi to NEDÁ?**
-- Silovou zpětnou vazbu na volantu - to je samostatný mód, [Force Feedback (Real
-  Driving Mod)](#související-módy), zatím nezveřejněný.
-- VR - také samostatný mód, [VR Mod](#související-módy).
-- Simulaci spojky ani model otáček motoru: mód pouze tiskne klávesy řazení nahoru/dolů,
-  které už má hra přiřazené.
-- Podporu jiných verzí než GOG v1.3 anglicky - viz výše.
-- Hotový, dokončený produkt: osmá ověřovací jízda zatím nebyla potvrzena - viz Známé
-  problémy výše.
-
-## Související módy
-
-Tři módy pro jednu hru, vyvíjené společně. Jsou vzájemně kompatibilní v jedné instalaci,
-ale každý řeší jinou úlohu:
-
-- **H-Shifter** - tento repozitář.
-- **Force Feedback (Real Driving Mod)** - silová zpětná vazba pro volanty, kterou hra
-  sama nikdy neodesílá. Jeho patcher zároveň instaluje ASI loader, který tento mód
-  potřebuje. Dosud nezveřejněno; odkaz zde přibude po zveřejnění.
-- **VR Mod** - stereoskopická virtuální realita se sledováním pohybu hlavy. Dosud
-  nezveřejněno.
+- Náraz zezadu je cítit jen stěží. Je to změřené, ne odhadnuté: žádný z našich kanálů jej zatím
+  nevidí a povolení prahu nárazu vrací falešné rázy, které byly horší. Je to známá chyba a v
+  tomto vydání opravena není.
+- Počítadlo poškození v tomto sestavení hry nedává nic použitelného, takže zásahy střelbou přes
+  volant cítit nejsou.
+- Klávesy kamery jsou v této verzi pouze klávesnicové. Tlačítko volantu na ně zatím přiřadit
+  nelze.
+- Posuvník zorného pole se projeví až při dalším spuštění Mafie, na rozdíl od všeho ostatního
+  na této záložce, co se do běžící hry dostane asi za sekundu.
+- Záložka VR nic neinstaluje - ten mód není hotový.
+- Nástroj zatím nemá vlastní ikonu.
 
 ## Pro vývojáře
 
-Zdrojový kód je otevřený záměrně. Vše, co mód o hře ví, je v tomto repozitáři: offsety,
-způsob vstupu do hry i rozhodovací logika.
+Zdrojové kódy jsou otevřené, jak samotné módy, tak instalátor. Sestaveno pomocí LLVM-MinGW pro
+32bitové Windows; build skripty jsou v `tools\`. Módy jsou ASI pluginy: `LS3DF.dll` hry
+importuje `DINPUT8.dll`, Windows jej vyhledá ve složce hry a přibalený Ultimate ASI Loader
+načte každé `.asi` vedle sebe. Odtud každý mód čte vlastní stav vozu na známých adresách
+enginu a buď posílá síly do volantu, hýbe kamerou, nebo ovládá převody.
 
-| Soubor | Co to je |
-|---|---|
-| `src/gearbox_hook8.c` | mód: hooky DirectInput, vkládání kláves, potlačení tlačítek, uzavřená smyčka |
-| `src/gearbox_logic.h` | rozhodovací jádro sdílené s testy, aby testy pokrývaly skutečně dodávaný kód |
-| `src/gearbox_gui.c` | `gearbox-setup.exe`: nástroj pro přiřazení, čisté Win32, bez frameworků |
-| `tests/test_gearbox.c` | offline simulace logiky řazení |
-
-Sestavení pomocí LLVM-MinGW, 32 bitů:
-
-```
-i686-w64-mingw32-clang -O2 -m32 -mwindows -o gearbox-setup.exe gearbox_gui.c -lkernel32 -luser32 -lcomdlg32
-```
-
-Jak se řazení doručí: hra čte klávesnici přes DirectInput 8, takže mód vytvoří vlastní
-zařízení klávesnice výhradně kvůli přístupu k vtable třídy zařízení, opatchuje
-`GetDeviceState` a nastaví bit příslušného scancode v 256bajtovém bufferu, který se hra
-chystá přečíst. Klávesnici rozpozná právě velikost bufferu 256 bajtů; vlastní zařízení
-módu jsou vyloučena. Nastavení bitu a jeho vynulování je tatáž cesta kódem a na tomtéž
-stojí potlačení tlačítek na straně volantu.
-
-Zdokumentované offsety sestavení GOG; vše je pouze pro čtení kromě stavu vstupu:
-
-| Co | Kde |
-|---|---|
-| aktuální stupeň (povel, nikoli odvozený z rychlosti) | `[car+0x58]+0x5D0` |
-| stínová hodnota stupně o cyklus zpět - probíhající řazení | `[car+0x58]+0x5D4` |
-| příznak ruční / automatické převodovky, 0 = ruční | `[car+0x58]+0x53C` |
-| tabulka akcí pro přiřazení kláves, 63 záznamů `char[16]` + `DWORD` | VA `0x624330..0x624808` |
-| identifikátory akcí GEARUP / GEARDOWN | `0x2D` / `0x2F` |
-
-Identifikátory akcí jsou uvedeny proto, že vkládání akce namísto klávesy je plánované
-vylepšení: zbavilo by uživatele nutnosti přiřazovat klávesy řazení vůbec. Místo vstupu
-pro ně zatím nebylo odvozeno.
-
-Uzavřená smyčka, zpracování odmítnutí a čtyři chyby, které je zformovaly, jsou popsány v
-[docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md). Pull requesty a forky jsou vítány.
-
-Chcete postavit podobný closed-loop překladač vstupu pro jinou hru? V
-[docs/PORTING.md](docs/PORTING.md) (anglicky) je popsána metoda: technika vkládání, jak
-ve své hře hledat obdobu "aktuálního stupně" a jak otestovat rozhodovací logiku dřív, než
-sáhnete na samotnou hru - beze ztráty čehokoli z disassembly Mafie.
+Pull requesty a forky jsou vítány, včetně přenesení postupu na úplně jinou hru.
 
 ## Poděkování
 
-- [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader) od ThirteenAG
-  - loader, díky kterému jsou `.asi` zásuvné moduly možné. Zde není distribuován.
+- [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader) od ThirteenAG,
+  přibalen jako `dinput8.dll`. Viz `THIRD-PARTY.md`.
+- Vše ostatní je vlastní práce tohoto projektu.
 
-## Licence
+## Licence a právní informace
 
-MIT - viz [LICENSE](LICENSE). Vztahuje se pouze na vlastní kód tohoto projektu.
+Vlastní kód tohoto projektu je pod licencí MIT. Viz `LICENSE`.
 
-Tento mód vyžaduje legální kopii hry Mafia: The City of Lost Heaven. Žádné herní soubory
-ani data nejsou součástí módu a nejsou distribuovány.
+Tento mód vyžaduje legální kopii hry Mafia: The City of Lost Heaven. Žádné herní soubory ani
+data nejsou přiložena ani šířena.
 
-Tento projekt není spojen se společnostmi Take-Two Interactive, 2K ani Illusion
-Softworks a není jimi schválen. Mafia je ochranná známka příslušných vlastníků. Licence
-MIT se vztahuje pouze na vlastní kód tohoto projektu; hra a její data zůstávají majetkem
-svých vlastníků.
+Tento projekt není spojen s Take-Two Interactive, 2K ani bývalou Illusion Softworks a není jimi
+schválen. Mafia je ochranná známka svých vlastníků. Licence MIT pokrývá pouze vlastní kód
+tohoto projektu; hra a její data zůstávají majetkem svých vlastníků.
