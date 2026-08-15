@@ -5,11 +5,17 @@ English | [Русский](README.ru.md) | [Čeština](README.cs.md)
 Force feedback, a first-person driving camera and an H-shifter gearbox for the GOG release of
 Mafia: The City of Lost Heaven, in one utility that installs and removes them.
 
-<!-- docs/img/banner.png - not in this release yet -->
+![ALXGtech Mafia 1 Mods - force feedback, first-person camera, H-shifter, and VR in progress](docs/img/banner.png)
 
 ## 🚀 Quick start
 
 Three mods for **Mafia: The City of Lost Heaven (2002)** - the OG Mafia 1 - in a single small program.
+
+> **Built and tested for the GOG release, v1.3 build 16073 - any language edition.** All eight of
+> them ship an identical `Game.exe`, so any one of them will do. **The Steam release and every
+> other version or store have not been tested, and compatibility with them is not guaranteed.**
+> The program checks your `Game.exe` and tells you when it is not the build this was made for.
+
 Too long to read? This is all of it:
 
 1. Download the `.zip` from **[Releases](../../releases)**.

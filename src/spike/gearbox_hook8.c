@@ -29,8 +29,8 @@
  * the mode KEY is pressed once per vehicle rather than the flag being written - the game does
  * its own bookkeeping and we do not have to guess at it.
  *
- * Config: <game>\gearbox hshifter setup\gearbox.ini - written by gearbox-setup.exe, which sits
- * in that same folder with everything else this module owns.
+ * Config: <game>\gearbox hshifter setup\gearbox.ini - written by the H-shifter tab of
+ * the installer, in that same folder with everything else this module owns.
  *     [hook]
  *     device=SIMAGIC
  *     suppress=6,7,2,3,1,0,4,5,38
@@ -120,7 +120,7 @@ static void GamePath(char *o,const char *b){ int i=0,j=0; while(g_dir[i]){o[i]=g
    file nobody writes. */
 #define GBDIR "ALXG mods\\gearbox hshifter setup"
 static void GearboxDir(char *o){ GamePath(o,GBDIR); }
-/* Settings, written by gearbox-setup.exe sitting in that same folder. One location only: the
+/* Settings, written by the installer's H-shifter tab into that folder. One location only: the
    development-era names (`mafia_gearbox_hook.ini`, `mafia_gearbox\gearbox.ini`) are gone, and
    keeping a fallback to them would only let a stale file no player should have quietly win. */
 static void IniPath(char *o){ GamePath(o,GBDIR "\\gearbox.ini"); }

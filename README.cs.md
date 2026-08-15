@@ -5,11 +5,17 @@
 Silová zpětná vazba volantu, kamera z pohledu řidiče a H-řadička pro GOG vydání hry Mafia: The
 City of Lost Heaven. Jeden nástroj, který to vše nainstaluje i odinstaluje.
 
-<!-- docs/img/banner.png - not in this release yet -->
+![ALXGtech Mafia 1 Mods - silová zpětná vazba, kamera z pohledu řidiče, H-řadička a VR v přípravě](docs/img/banner.png)
 
 ## 🚀 Rychlý start
 
-Tři módy pro **Mafia: The City of Lost Heaven** - tu první - v jednom malém programu.
+Tři módy pro **Mafia: The City of Lost Heaven (2002)** - tu původní, první Mafii - v jednom malém programu.
+
+> **Vytvořeno a otestováno pro vydání GOG, v1.3 build 16073 - jakákoli jazyková verze.** Všech osm
+> jich obsahuje shodný `Game.exe`, takže poslouží kterákoli. **Vydání na Steamu ani žádná jiná
+> verze či obchod testovány nebyly a kompatibilita s nimi není zaručena.** Program zkontroluje váš
+> `Game.exe` a upozorní, pokud nejde o sestavení, pro které bylo vše vytvořeno.
+
 Příliš dlouhé na čtení? To je všechno:
 
 1. Stáhněte `.zip` ze sekce **[Releases](../../releases)**.

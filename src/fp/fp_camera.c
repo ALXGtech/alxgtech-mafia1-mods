@@ -357,12 +357,12 @@ static volatile LONG g_keyToggle = VK_F11;
 static volatile LONG g_keyHeight = VK_F12;
 
 /* ---- LIVE SEAT NUDGE KEYS, requested 2026-07-31 -----------------------------------------
- * F row - it belongs to the FFB mod, the gearbox and an AutoHotkey script, and
+ * F row - it belongs to the FFB mod, the gearbox and a separate shifter tool, and
  *  forward-back and left-right... on F1 through F6... and on F7, F8 confirm whether I like this
  *  camera or not."
  *
  * THE COLLISION, stated rather than silently worked around: this file's own header forbids the
- * F row - it belongs to the FFB mod, the gearbox and an AutoHotkey script, and
+ * F row - it belongs to the FFB mod, the gearbox and a separate shifter tool, and
  * `mafia_ffb.asi` (deployed in this very sandbox) addresses its profile table by F1..F5. He
  * asked for the F row anyway, so the F row is the DEFAULT - but every code is read from the ini,
  * so moving them off costs one line and no rebuild. If a nudge also flips an FFB profile, that
@@ -3260,7 +3260,7 @@ static DWORD WINAPI FpThread(LPVOID p)
      * every 40 ms and cannot break anyone else's input.
      *
      * NOT F1-F12: the whole function row belongs to the FFB mod, the gearbox and an
-     * AutoHotkey script. Numpad by default, which is where a driver's free hand is, and both
+     * other tools. Numpad by default, which is where a driver's free hand is, and both
      * keys are configurable because the VR project has not settled its own map yet and asked
      * that no key be treated as final.
      *
