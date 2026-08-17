@@ -324,22 +324,26 @@ anything was taken.
   by ThirteenAG. The reference for the wide-screen interface problem. Our correction is a different
   approach and shares no code with it.
 - **[GTAV Manual Transmission](https://github.com/ikt32/GTAVManualTransmission)** by ikt32. A
-  different game and a different engine, and the reference for what a proper H-pattern gearbox mod
-  gives a driver. Our gearbox drives Mafia's own gear controls and was written from scratch.
+  different game and a different engine, and what we read it for was its **vehicle physics** - how
+  it handles slip angles in particular. Our force feedback works those out its own way, from Mafia's
+  own car state, and shares no code with it.
 - **[Mafia First Person Shooter Mod](https://www.moddb.com/mods/first-person-camera/downloads/mafia-first-person-shooter-mod)**.
   The reference that a first-person view in this game is achievable at all. Ours is done completely
   differently and shares no code with it.
 
-### If you are named here and would rather not be
+### If you are not named here and you should be
 
-**Any author, tool maker or contributor mentioned on this page - or who thinks they should have
-been - can have it changed.** A credit line, the way a technique is described, a link, a file, the
-mention itself: say what you want different and it is done, in full, without argument and without
-you having to justify the request.
+**This list is almost certainly incomplete.** Work gets read, learned from and half-remembered
+years later, and the person who did it never hears about it. If something of yours belongs on this
+page and is not on it, say so and it goes on.
+
+The same offer runs the other way for anyone already mentioned: a credit line, the way a technique
+is described, a link, the mention itself - tell us what you want different, or gone, and it is
+done. In full, without argument, and without you having to justify the request.
 
 Open an issue here, or reach out whatever way is easiest for you. This goes for anyone whose work
-is referenced even indirectly. Nobody should have to make a case to have their own work described
-the way they want it described.
+is referenced even indirectly. Nobody should have to make a case about how their own work is
+described.
 
 ## License and legal
 

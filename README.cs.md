@@ -330,18 +330,23 @@ bylo převzato.
   od ThirteenAG. Reference pro problém širokoúhlého rozhraní. Naše oprava je jiný přístup a
   nesdílí s ním žádný kód.
 - **[GTAV Manual Transmission](https://github.com/ikt32/GTAVManualTransmission)** od ikt32. Jiná
-  hra a jiný engine, ale reference toho, co pořádný mód s H-kulisou dává řidiči. Naše řadička
-  ovládá vlastní převody Mafie a byla napsána od nuly.
+  hra a jiný engine, a četli jsme ho kvůli jeho **fyzice vozidla** - konkrétně tomu, jak řeší úhly
+  smyku. Naše silová zpětná vazba si je počítá po svém, z vlastního stavu auta v Mafii, a nesdílí
+  s ním žádný kód.
 - **[Mafia First Person Shooter Mod](https://www.moddb.com/mods/first-person-camera/downloads/mafia-first-person-shooter-mod)**.
   Reference toho, že pohled z první osoby je v této hře vůbec dosažitelný. Naše řešení je
   uděláno úplně jinak a nesdílí s ním žádný kód.
 
-### Pokud jste zde jmenováni a nechcete být
+### Pokud zde nejste jmenováni a měli byste být
 
-**Kterýkoli autor, tvůrce nástroje nebo přispěvatel zmíněný na této stránce - nebo kdokoli, kdo
-si myslí, že zmíněn být měl - může požádat o změnu.** Řádek v poděkování, způsob, jakým je
-popsána nějaká technika, odkaz, soubor, samotná zmínka: řekněte, co chcete jinak, a bude to
-provedeno, v plném rozsahu, bez námitek a bez nutnosti svůj požadavek zdůvodňovat.
+**Tento seznam je téměř jistě neúplný.** Práce se čte, lidé se z ní učí a o léta později si ji
+pamatují jen zpola, a ten, kdo ji vytvořil, se to nikdy nedozví. Pokud sem patří něco vašeho a
+není to tu uvedeno, řekněte to a bude to doplněno.
+
+Stejná nabídka platí i opačným směrem pro každého, kdo už je zmíněn: řádek v poděkování, způsob,
+jakým je popsána nějaká technika, odkaz, samotná zmínka - řekněte, co chcete změnit nebo
+odstranit, a bude to provedeno. V plném rozsahu, bez námitek a bez nutnosti svůj požadavek
+zdůvodňovat.
 
 Otevřete zde issue, nebo se ozvěte jakoukoli cestou, která je pro vás nejsnazší. Platí to pro
 kohokoli, jehož práce je zmíněna byť jen nepřímo. Nikdo by neměl muset obhajovat, aby byla jeho
