@@ -152,6 +152,23 @@ to 100%.
 **Presets 1, 2, 3.** The one lit green is the one being edited, and every value on the page goes
 into it. `Import preset...` and `Export preset...` move them between machines.
 
+**If nothing is reaching the wheel, the tab tells you which of the three it is.** There is a lamp
+and a line at the bottom, and it is the first thing to look at before changing any slider:
+
+| the lamp says | what it means |
+|---|---|
+| driving effects are on, and names your wheel | it is working |
+| the game is not running, and names the wheel it last saw | the mod is fine, Mafia is not open |
+| no force is reaching the wheel | the mod is loaded and something is stopping it - check the wheel is plugged in and picked |
+
+The same area says so when the mod ended up holding a **different wheel from the one you chose**,
+which happens if the chosen one was unplugged at the moment the game started. It names both, so a
+wheel that has gone quiet is not a mystery.
+
+**`ON: recommended in-game FFB settings` is reversible, per save profile.** Pressing it again puts
+back exactly what that profile had before - not some factory default - and anything you changed
+yourself in the meantime is left alone.
+
 ### 🕹️ H-shifter
 
 ![The H-shifter tab: a binding per gate, the A/M mode button with its two behaviours, and the three keys the game itself uses](docs/img/tab-h-shifter.png)
@@ -172,6 +189,11 @@ into it. `Import preset...` and `Export preset...` move them between machines.
    gearbox mode in **Mafia's own Options** first, then press the same keys here so the mod knows
    what the game is listening for.
 4. **Restart Mafia.**
+
+Each row has its own `clear` button if you want to unbind one. **A row bound to something that is
+not plugged in stays bound** and says so, rather than quietly reverting to unset - so opening the
+tab with the shifter unplugged does not lose your work. When the tab opens it also lists every
+device it found, which is the fastest answer to "why is my shifter not in the list".
 
 ### 👁️ First person
 

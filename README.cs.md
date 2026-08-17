@@ -154,6 +154,24 @@ na 100 %.
 **Předvolby 1, 2, 3.** Ta, která svítí zeleně, se upravuje, a jdou do ní všechny hodnoty ze
 stránky. `Import preset...` a `Export preset...` je přenášejí mezi počítači.
 
+**Pokud se k volantu nic nedostává, záložka sama řekne, o kterou ze tří příčin jde.** Dole je
+kontrolka a řádek textu, a to je první věc, na kterou se podívat dřív, než sáhnete na jakýkoli
+posuvník:
+
+| kontrolka říká | co to znamená |
+|---|---|
+| jízdní efekty jsou zapnuté a jmenuje váš volant | funguje to |
+| hra neběží a jmenuje volant, který viděla naposledy | mód je v pořádku, jen Mafia není spuštěná |
+| k volantu se nedostává žádná síla | mód je načtený a něco mu brání - zkontrolujte, že je volant zapojený a vybraný |
+
+Totéž místo to napíše, když mód nakonec drží **jiný volant, než jaký jste vybrali** - to se stane,
+když byl vybraný volant v okamžiku spuštění hry odpojený. Jmenuje oba, takže zmlknutý volant není
+záhadou.
+
+**`ON: recommended in-game FFB settings` je vratné, zvlášť pro každý herní profil.** Opětovné
+stisknutí vrátí přesně to, co v tom profilu bylo předtím, ne nějaké tovární výchozí nastavení.
+Cokoli jste si mezitím upravili sami, zůstává beze změny.
+
 ### 🕹️ H-řadička
 
 ![Záložka H-shifter: vazba na každou kulisu, tlačítko režimu A/M se dvěma chováními a tři klávesy, které používá sama hra](docs/img/tab-h-shifter.png)
@@ -174,6 +192,12 @@ stránky. `Import preset...` a `Export preset...` je přenášejí mezi počíta
    v **Možnostech samotné Mafie** a teprve pak stiskněte tytéž klávesy zde, aby mód věděl, na co
    hra poslouchá.
 4. **Restartujte Mafii.**
+
+Každý řádek má vlastní tlačítko `clear`, pokud chcete vazbu zrušit. **Řádek přiřazený k zařízení,
+které není zapojené, zůstává přiřazený** a řekne to nahlas, místo aby se tiše vrátil do
+nepřiřazeného stavu - takže otevření záložky s odpojenou kulisou vaši práci nesmaže. Při otevření
+záložka také vypíše všechna nalezená zařízení, což je nejrychlejší odpověď na otázku, proč vaše
+kulisa v seznamu není.
 
 ### 👁️ Kamera z pohledu řidiče
 
