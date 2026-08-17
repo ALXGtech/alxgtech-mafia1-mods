@@ -126,12 +126,14 @@ Everything on this tab is **live** - it reaches the game as you move the slider,
 3. **Set `WHEEL ROTATION RANGE` to whatever your wheel's own driver is set to.** This is the one
    setting you must not guess. It changes nothing on the wheel - it tells the mod what to serve.
    Everything was tuned at **600 degrees**, and if your wheel's range is yours to choose, 600 is
-   the recommendation.
+   the recommendation. Eight values are offered - 90, 360, 540, 600, 720, 900, 1080 and 1440 - and
+   the tab is honest about which is which: some were actually driven and confirmed, the rest are
+   derived by formula and have never been driven. It says so under the selector.
 
 Then the sliders. **100% is the shipped feel**, and the tall mark on each one is the recommended
 value - 100 everywhere except **Gunfire, which is 0 on purpose**: it shakes the wheel for every
-shot fired from your car, including your allies', and a jolt you did not cause reads as the wheel
-going wrong.
+shot fired from your car - your allies' and your enemies', not just yours - and a jolt you did not
+cause reads as the wheel going wrong.
 
 | group | what it is |
 |---|---|
@@ -141,7 +143,7 @@ going wrong.
 | Pedestrians | what it says |
 | Road surface | curbs, tram rails, offroad |
 | Slide feel | the slip-angle effect |
-| Wheel weight | centering spring, and the damper at a standstill and in motion |
+| `Centering spring`, `Parking damper`, `Driving damper` | the wheel-weight column: how heavy the wheel feels standing still and moving |
 
 Trucks have their own damper pair that multiplies the car values. Those are arithmetic and nobody
 has driven them, which the tab says out loud. **Back to default settings** puts every slider back
@@ -163,8 +165,9 @@ into it. `Import preset...` and `Export preset...` move them between machines.
      you are in that position.
    - **`One press to switch A/M`** - for a separate button that clicks and springs back.
 
-   Pick the one that matches the hardware you bound. This is the setting people get wrong, because
-   both work and only one matches what your hand is doing.
+   **The tool tries to work this out for you**: when you bind the control it times how long it
+   stays down and selects the matching behaviour itself. Check that it chose right - both work,
+   and only one matches what your hand is actually doing.
 3. **The three game keys at the bottom are the game's, not ours.** Set GEAR UP, GEAR DOWN and
    gearbox mode in **Mafia's own Options** first, then press the same keys here so the mod knows
    what the game is listening for.
@@ -174,7 +177,8 @@ into it. `Import preset...` and `Export preset...` move them between machines.
 
 ![The First person tab: the wide-screen fix, the seat sliders, the horizon choice and the optional camera keys](docs/img/tab-first-person.png)
 
-Live as well - no restart.
+Live as well - **except `Field of view`**, which is the one row on this page that patches
+`Game.exe` and needs Mafia restarted. The tab says so on that row.
 
 - **`UI wide-screen fix`** un-stretches the radar and the speedometer, which Mafia drew for a 4:3
   screen. On by default; the button turns it off while the game runs.
@@ -186,8 +190,8 @@ Live as well - no restart.
 - **Horizon**: `Locks to horizon` is the recommended setting and what it was driven with.
   `Rolls with the car` is closer to a real head and harder to watch.
 - **Keys to adjust the camera while driving** are optional and **keyboard only in this version.
-  Wheel buttons are not supported here** - you can still rebind the keys, and F1-F6 is the shipped
-  layout.
+  Wheel buttons are not supported here.** The six seat keys, F1-F6 as shipped, can be rebound on
+  this tab. The near-plane pair `F9 / F10` cannot - those live in `mafia_fp.ini` only.
 - **Presets 1, 2, 3**, same as the force feedback: the green one is being edited.
 
 ### What enabling a mod puts in the game folder
@@ -239,8 +243,9 @@ survives a relaunch, and the same values are on the First person tab. More contr
 in `mafia_fp.ini`.
 
 Everything on the Force Feedback and First person tabs takes effect while the game runs, so you
-can leave the utility open beside Mafia and feel a change on the next corner. The H-shifter is the
-exception: its bindings are read when the game starts.
+can leave the utility open beside Mafia and feel a change on the next corner. Two exceptions:
+`Field of view`, which patches `Game.exe`, and the whole H-shifter tab, whose bindings are read
+when the game starts. Both say so on screen.
 
 ## Compatibility
 
@@ -282,8 +287,37 @@ Pull requests and forks are welcome, including porting the technique to a differ
 ## Credits
 
 - [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader) by ThirteenAG, bundled
-  as `dinput8.dll`. See `THIRD-PARTY.md`.
+  as `dinput8.dll`. See `THIRD-PARTY.md`. This is the only third-party code that ships here.
 - Everything else is this project's own work.
+
+### Inspiration - looked at, learned from, not used
+
+The three projects below solved problems this mod also has, and seeing that they could be solved
+was worth a great deal. **None of their code is in this repository or in anything it ships.** Each
+was read as a reference for what is possible, and the implementation here was worked out
+independently and came out different. They are named because they deserve to be, not because
+anything was taken.
+
+- **[WidescreenFixesPack - Mafia](https://github.com/ThirteenAG/WidescreenFixesPack/releases/tag/mafia)**
+  by ThirteenAG. The reference for the wide-screen interface problem. Our correction is a different
+  approach and shares no code with it.
+- **[GTAV Manual Transmission](https://github.com/ikt32/GTAVManualTransmission)** by ikt32. A
+  different game and a different engine, and the reference for what a proper H-pattern gearbox mod
+  gives a driver. Our gearbox drives Mafia's own gear controls and was written from scratch.
+- **[Mafia First Person Shooter Mod](https://www.moddb.com/mods/first-person-camera/downloads/mafia-first-person-shooter-mod)**.
+  The reference that a first-person view in this game is achievable at all. Ours is done completely
+  differently and shares no code with it.
+
+### If you are named here and would rather not be
+
+**Any author, tool maker or contributor mentioned on this page - or who thinks they should have
+been - can have it changed.** A credit line, the way a technique is described, a link, a file, the
+mention itself: say what you want different and it is done, in full, without argument and without
+you having to justify the request.
+
+Open an issue here, or reach out whatever way is easiest for you. This goes for anyone whose work
+is referenced even indirectly. Nobody should have to make a case to have their own work described
+the way they want it described.
 
 ## License and legal
 

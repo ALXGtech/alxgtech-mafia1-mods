@@ -128,11 +128,14 @@ restartu.
 3. **Nastavte `WHEEL ROTATION RANGE` přesně na to, na co je nastaven ovladač vašeho volantu.** To
    je jediné nastavení, které se nesmí hádat. Na volantu samotném nic nemění - říká módu, co má
    posílat. Vše bylo laděno na **600 stupních**, a pokud si rozsah volíte sami, 600 je doporučení.
+   Nabízí se osm hodnot - 90, 360, 540, 600, 720, 900, 1080 a 1440 - a záložka poctivě uvádí,
+   která je která: některé byly skutečně odjety a ověřeny, zbytek je odvozen vzorcem a nikdy
+   odjet nebyl. Píše se to pod výběrem.
 
 Pak posuvníky. **100 % je pocit, se kterým se mód dodává**, a vysoká značka na každém posuvníku je
 doporučená hodnota: 100 všude kromě **Gunfire, které je 0 záměrně**. Otřese volantem při každém
-výstřelu z vašeho auta, včetně výstřelů vašich spojenců, a otřes, který jste nezpůsobili, působí
-jako porucha volantu.
+výstřelu z vašeho auta - jak vašich spojenců, tak vašich nepřátel, ne jen vašich vlastních - a
+otřes, který jste nezpůsobili, působí jako porucha volantu.
 
 | skupina | co to je |
 |---|---|
@@ -142,7 +145,7 @@ jako porucha volantu.
 | Pedestrians | přesně to, co je napsáno |
 | Road surface | obrubníky, tramvajové koleje, mimo silnici |
 | Slide feel | efekt úhlu skluzu |
-| Wheel weight | vystřeďovací pružina a tlumič - v klidu i za jízdy |
+| `Centering spring`, `Parking damper`, `Driving damper` | sloupec s váhou volantu: jak těžký volant je v klidu i za jízdy |
 
 Nákladní vozy mají vlastní dvojici tlumičů, která násobí hodnoty osobních aut. Jsou aritmetické a
 nikdo s nimi nejel, což záložka říká nahlas. **Back to default settings** vrátí všechny posuvníky
@@ -164,8 +167,9 @@ stránky. `Import preset...` a `Export preset...` je přenášejí mezi počíta
      co jste v této poloze.
    - **`One press to switch A/M`** - pro samostatné tlačítko, které cvakne a vrátí se zpět.
 
-   Vyberte to, které odpovídá hardwaru, jenž jste přiřadili. Právě tady se chybuje nejčastěji:
-   fungují obě, ale jen jedna odpovídá tomu, co dělá vaše ruka.
+   **Nástroj se to snaží vyřešit za vás**: při přiřazování ovladače měří, jak dlouho zůstává
+   stisknutý, a odpovídající chování zvolí sám. Zkontrolujte, že zvolil správně - fungují obě,
+   ale jen jedna odpovídá tomu, co dělá vaše ruka.
 3. **Tři klávesy dole patří hře, ne nám.** Nejdřív nastavte GEAR UP, GEAR DOWN a režim převodovky
    v **Možnostech samotné Mafie** a teprve pak stiskněte tytéž klávesy zde, aby mód věděl, na co
    hra poslouchá.
@@ -175,7 +179,8 @@ stránky. `Import preset...` a `Export preset...` je přenášejí mezi počíta
 
 ![Záložka First person: oprava rozhraní pro širokoúhlou obrazovku, posuvníky posazení, volba horizontu a volitelné klávesy kamery](docs/img/tab-first-person.png)
 
-Také se projeví hned - bez restartu.
+Také se projeví hned - **kromě `Field of view`**, což je jediný řádek na této záložce, který
+mění `Game.exe` a vyžaduje restart Mafie. Záložka to u tohoto řádku uvádí.
 
 - **`UI wide-screen fix`** odstraní roztažení radaru a tachometru, které Mafia kreslila pro
   obrazovku 4:3. Zapnuto ve výchozím stavu; tlačítko to vypne i za běhu hry.
@@ -187,8 +192,9 @@ Také se projeví hned - bez restartu.
 - **Horizont**: `Locks to horizon` je doporučené nastavení a to, se kterým se jezdilo.
   `Rolls with the car` je blíž skutečné hlavě a hůř se na to dívá.
 - **Klávesy pro doladění kamery za jízdy** jsou volitelné a v této verzi **fungují jen z
-  klávesnice. Tlačítka volantu zde podporovaná nejsou** - klávesy si přesto můžete přemapovat a
-  F1-F6 je výchozí rozložení.
+  klávesnice. Tlačítka volantu zde podporovaná nejsou.** Šest kláves posazení, ve výchozím stavu
+  F1-F6, lze na této záložce přemapovat. Dvojici blízké ořezové roviny `F9 / F10` přemapovat
+  nelze - ty žijí jen v `mafia_fp.ini`.
 - **Předvolby 1, 2, 3**, stejně jako u silové zpětné vazby: upravuje se ta, která svítí zeleně.
 
 ### Co zapnutí módu přidá do složky hry
@@ -240,8 +246,9 @@ Pouze klávesnice, jak říká i záložka. Posazení, na kterém se ustálíte,
 jsou další klávesy, zatím nepřiřazené.
 
 Vše na záložkách Force Feedback a First person se projeví za běhu hry - utilitu můžete nechat
-otevřenou vedle Mafie a změnu ucítíte v další zatáčce. Jediná výjimka: vazby H-řadičky se čtou
-při startu hry.
+otevřenou vedle Mafie a změnu ucítíte v další zatáčce. Dvě výjimky: `Field of view`, které mění
+`Game.exe`, a celá záložka H-řadičky, jejíž vazby se čtou při startu hry. Obě to na obrazovce
+uvádějí.
 
 ## Kompatibilita
 
@@ -283,8 +290,38 @@ Pull requesty a forky jsou vítány, včetně přenesení postupu na úplně jin
 ## Poděkování
 
 - [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader) od ThirteenAG,
-  přibalen jako `dinput8.dll`. Viz `THIRD-PARTY.md`.
+  přibalen jako `dinput8.dll`. Viz `THIRD-PARTY.md`. Toto je jediný kód třetí strany, který je
+  součástí toho, co se odsud instaluje.
 - Vše ostatní je vlastní práce tohoto projektu.
+
+### Inspirace - na co jsme se dívali, z čeho se učili, co jsme nepoužili
+
+Následující tři projekty řešily problémy, které má i tento mód, a už jen vidět, že jdou vyřešit,
+mělo velkou hodnotu. **Žádný jejich kód není v tomto repozitáři ani v ničem, co se z něj
+instaluje.** Každý byl přečten jako reference toho, co je možné, a implementace zde vznikla
+nezávisle a vyšla jinak. Jsou jmenováni proto, že si to zaslouží, ne proto, že by z nich něco
+bylo převzato.
+
+- **[WidescreenFixesPack - Mafia](https://github.com/ThirteenAG/WidescreenFixesPack/releases/tag/mafia)**
+  od ThirteenAG. Reference pro problém širokoúhlého rozhraní. Naše oprava je jiný přístup a
+  nesdílí s ním žádný kód.
+- **[GTAV Manual Transmission](https://github.com/ikt32/GTAVManualTransmission)** od ikt32. Jiná
+  hra a jiný engine, ale reference toho, co pořádný mód s H-kulisou dává řidiči. Naše řadička
+  ovládá vlastní převody Mafie a byla napsána od nuly.
+- **[Mafia First Person Shooter Mod](https://www.moddb.com/mods/first-person-camera/downloads/mafia-first-person-shooter-mod)**.
+  Reference toho, že pohled z první osoby je v této hře vůbec dosažitelný. Naše řešení je
+  uděláno úplně jinak a nesdílí s ním žádný kód.
+
+### Pokud jste zde jmenováni a nechcete být
+
+**Kterýkoli autor, tvůrce nástroje nebo přispěvatel zmíněný na této stránce - nebo kdokoli, kdo
+si myslí, že zmíněn být měl - může požádat o změnu.** Řádek v poděkování, způsob, jakým je
+popsána nějaká technika, odkaz, soubor, samotná zmínka: řekněte, co chcete jinak, a bude to
+provedeno, v plném rozsahu, bez námitek a bez nutnosti svůj požadavek zdůvodňovat.
+
+Otevřete zde issue, nebo se ozvěte jakoukoli cestou, která je pro vás nejsnazší. Platí to pro
+kohokoli, jehož práce je zmíněna byť jen nepřímo. Nikdo by neměl muset obhajovat, aby byla jeho
+vlastní práce popsána tak, jak si přeje.
 
 ## Licence a právní informace
 
