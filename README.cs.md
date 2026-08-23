@@ -133,9 +133,12 @@ restartu.
    odjet nebyl. Píše se to pod výběrem.
 
 Pak posuvníky. **100 % je pocit, se kterým se mód dodává**, a vysoká značka na každém posuvníku je
-doporučená hodnota: 100 všude kromě **Gunfire, které je 0 záměrně**. Otřese volantem při každém
-výstřelu z vašeho auta - jak vašich spojenců, tak vašich nepřátel, ne jen vašich vlastních - a
-otřes, který jste nezpůsobili, působí jako porucha volantu.
+doporučená hodnota: 100 všude kromě **Gunfire, které je 0**. Důvody jsou dva a na tomto sestavení
+víc záleží na tom druhém. Na nulu je nastaven proto, že se efekt spouští při každém výstřelu z
+vašeho auta, spojenců i nepřátel, a otřes, který jste nezpůsobili, působí jako porucha volantu. A
+na GOG vydání navíc posuvník nemá na co reagovat: kanál čte počítadlo, které se za celou jízdu ani
+nehne - ověřeno - a to je stejný důvod, proč zásahy do vás vůbec nejsou cítit. Popisek k posuvníku
+na záložce popisuje ten efekt, ne tuhle situaci, takže je posuvník mnohem tišší, než vypadá.
 
 | skupina | co to je |
 |---|---|
@@ -299,12 +302,13 @@ před nahrazením zazálohuje a při odinstalaci vrátí.
 - Posuvník zorného pole se projeví až při dalším spuštění Mafie, na rozdíl od všeho ostatního
   na této záložce, co se do běžící hry dostane asi za sekundu.
 - Záložka VR nic neinstaluje - ten mód není hotový.
-- Nástroj zatím nemá vlastní ikonu.
 
 ## Pro vývojáře
 
-Zdrojové kódy jsou otevřené, jak samotné módy, tak instalátor. Sestaveno pomocí LLVM-MinGW pro
-32bitové Windows; build skripty jsou v `tools\`. Módy jsou ASI pluginy: `LS3DF.dll` hry
+Zdrojové kódy jsou otevřené, jak samotné módy, tak instalátor - vše je ve složce `src\`. Sestavují
+se pomocí LLVM-MinGW pro 32bitové Windows. **Build skripty zatím zveřejněné nejsou**; stále obsahují
+cesty specifické pro konkrétní počítač a jejich vyčištění je zatím jen na seznamu úkolů.
+Módy jsou ASI pluginy: `LS3DF.dll` hry
 importuje `DINPUT8.dll`, Windows jej vyhledá ve složce hry a přibalený Ultimate ASI Loader
 načte každé `.asi` vedle sebe. Odtud každý mód čte vlastní stav vozu na známých adresách
 enginu a buď posílá síly do volantu, hýbe kamerou, nebo ovládá převody.

@@ -131,9 +131,13 @@ Everything on this tab is **live** - it reaches the game as you move the slider,
    derived by formula and have never been driven. It says so under the selector.
 
 Then the sliders. **100% is the shipped feel**, and the tall mark on each one is the recommended
-value - 100 everywhere except **Gunfire, which is 0 on purpose**: it shakes the wheel for every
-shot fired from your car - your allies' and your enemies', not just yours - and a jolt you did not
-cause reads as the wheel going wrong.
+value - 100 everywhere except **Gunfire, which is 0**. Two reasons, and the second one matters more
+on this build. It was set to 0 because the effect fires for every shot from your car, your allies'
+and your enemies' alike, and a jolt you did not cause feels like the wheel malfunctioning. And on
+the GOG release the channel has nothing to act on anyway: it reads a counter that never moves
+there - measured across a whole drive - which is the same reason being shot at is not felt at all.
+The tab's own note describes the effect rather than this, so the slider is more dormant than it
+looks.
 
 | group | what it is |
 |---|---|
@@ -293,12 +297,13 @@ existing one is backed up before it is replaced, and put back on uninstall.
 - The field of view slider takes effect when Mafia next starts, unlike everything else on that
   tab, which reaches a running game in about a second.
 - The VR tab installs nothing - that mod is not finished.
-- The utility has no icon of its own yet.
 
 ## For developers
 
-The sources are open, including the mods themselves and the installer. Built with LLVM-MinGW
-for 32-bit Windows; the build scripts are in `tools\`. The mods are ASI plugins: the game's
+The sources are open, including the mods themselves and the installer - everything under `src\`.
+They are built with LLVM-MinGW for 32-bit Windows. **The build scripts are not published yet**;
+they still carry machine-specific paths, and cleaning them up is on the list rather than done.
+The mods are ASI plugins: the game's
 `LS3DF.dll` imports `DINPUT8.dll`, Windows resolves that from the game folder, and the bundled
 Ultimate ASI Loader loads every `.asi` beside it. From there each mod reads the engine's own
 car state at known addresses and either writes forces to the wheel, moves the camera, or drives
