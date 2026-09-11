@@ -1,16 +1,16 @@
 [English](README.md) | [Русский](README.ru.md) | Čeština
 
-> **Tato stránka je o jednu revizi pozadu za anglickou.** Aktuální verze je
-> [English](README.md); překlad se dopracovává.
-
 # ALXGtech Mafia 1 Mods
 
-Tento mod přidává hře Mafia: The City of Lost Heaven (2002, **GOG v1.3 build 16073**) moderní
-silovou zpětnou vazbu volantu Direct Drive Force Feedback (testováno na Simagic Alpha EVO;
-fungovat by měl každý volant s DirectInput), kameru z pohledu řidiče a H-řadičku - vše
-nainstaluje i odinstaluje jeden nástroj.
+Tento mod dává hře Mafia: The City of Lost Heaven (2002, **GOG v1.3 build 16073**)
 
-Mafia tak konečně jezdí jako pořádná simulace.
+* moderní podporu volantu se silovou zpětnou vazbou Direct Drive Force Feedback (testováno na Simagic EVO 12nm, fungovat by měla většina volantů),
+* kameru z pohledu řidiče
+* H-řadičku.
+
+v jednom nástroji, který je nainstaluje i odinstaluje.
+
+Mafia tak konečně jezdí jako pořádná simulace!
 
 ![ALXGtech Mafia 1 Mods - silová zpětná vazba, kamera z pohledu řidiče, H-řadička a VR v přípravě](docs/img/banner.png)
 
@@ -138,6 +138,15 @@ restartu.
    Nabízí se osm hodnot - 90, 360, 540, 600, 720, 900, 1080 a 1440 - a záložka poctivě uvádí,
    která je která: některé byly skutečně odjety a ověřeny, zbytek je odvozen vzorcem a nikdy
    odjet nebyl. Píše se to pod výběrem.
+
+![Základna Simagic, na kterou bylo vyladěno vše na této stránce: Alpha EVO 12 N.m na 55 %, 600 stupňů otáčení, mechanické efekty téměř vypnuté](docs/img/wheel-settings-reference.png)
+
+**Volant, ze kterého tato čísla pocházejí, pro přehled.** To je základna, na kterou byla vyladěna
+každá hodnota na této stránce: **Simagic Alpha EVO 12 N.m**, běžící na **55 %, což je 6.6 N.m**,
+s rozsahem otáčení nastaveným na **600 stupňů** - stejných 600, které po vás žádá krok výše - a
+vlastní mechanické efekty ovladače ponechané téměř vypnuté, protože tlumení a váhu přidává sám mod.
+Nemusíte to kopírovat a mod to nikdy nečte; je to tu proto, aby za větou „vyladěno na 600 stupních“
+stála i fotka.
 
 Pak posuvníky. **100 % je pocit, se kterým se mód dodává**, a vysoká značka na každém posuvníku je
 doporučená hodnota: 100 všude kromě **Gunfire, které je 0**. Důvody jsou dva a na tomto sestavení

@@ -1,8 +1,5 @@
 English | [Русский](README.ru.md) | [Čeština](README.cs.md)
 
-> The English page is the current one. **The Russian and Czech translations are a revision behind**
-> and are being brought up to date.
-
 # ALXGtech Mafia 1 Mods
 
 This mod gives Mafia: The City of Lost Heaven (2002, **GOG v1.3 build 16073**)
