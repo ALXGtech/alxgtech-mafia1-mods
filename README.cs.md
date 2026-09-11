@@ -1,10 +1,16 @@
 [English](README.md) | [Русский](README.ru.md) | Čeština
 
+> **Tato stránka je o jednu revizi pozadu za anglickou.** Aktuální verze je
+> [English](README.md); překlad se dopracovává.
+
 # ALXGtech Mafia 1 Mods
 
-Silová zpětná vazba volantu, kamera z pohledu řidiče a H-řadička pro **GOG vydání, v1.3 build
-16073**, hry Mafia: The City of Lost Heaven. Jeden nástroj, který to vše nainstaluje i
-odinstaluje.
+Tento mod přidává hře Mafia: The City of Lost Heaven (2002, **GOG v1.3 build 16073**) moderní
+silovou zpětnou vazbu volantu Direct Drive Force Feedback (testováno na Simagic Alpha EVO;
+fungovat by měl každý volant s DirectInput), kameru z pohledu řidiče a H-řadičku - vše
+nainstaluje i odinstaluje jeden nástroj.
+
+Mafia tak konečně jezdí jako pořádná simulace.
 
 ![ALXGtech Mafia 1 Mods - silová zpětná vazba, kamera z pohledu řidiče, H-řadička a VR v přípravě](docs/img/banner.png)
 

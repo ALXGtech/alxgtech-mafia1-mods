@@ -1,10 +1,20 @@
 English | [Русский](README.ru.md) | [Čeština](README.cs.md)
 
+> The English page is the current one. **The Russian and Czech translations are a revision behind**
+> and are being brought up to date.
+
 # ALXGtech Mafia 1 Mods
 
-Force feedback, a first-person driving camera and an H-shifter gearbox for the **GOG release,
-v1.3 build 16073**, of Mafia: The City of Lost Heaven, in one utility that installs and removes
-them.
+This mod gives Mafia: The City of Lost Heaven (2002, **GOG v1.3 build 16073**)
+
+* modern Direct Drive Force Feedback steering wheel support (tested on a Simagic EVO 12nm, most
+  wheels should work),
+* first-person driving camera
+* H-shifter gearbox.
+
+in one utility that installs and removes them.
+
+So now Mafia drives like a proper sim game at last!
 
 ![ALXGtech Mafia 1 Mods - force feedback, first-person camera, H-shifter, and VR in progress](docs/img/banner.png)
 
@@ -130,6 +140,15 @@ Everything on this tab is **live** - it reaches the game as you move the slider,
    the recommendation. Eight values are offered - 90, 360, 540, 600, 720, 900, 1080 and 1440 - and
    the tab is honest about which is which: some were actually driven and confirmed, the rest are
    derived by formula and have never been driven. It says so under the selector.
+
+![The Simagic base everything was tuned against: a 12 N.m Alpha EVO at 55 percent, 600 degrees of rotation, mechanical effects nearly off](docs/img/wheel-settings-reference.png)
+
+**The wheel these numbers came from, for reference.** That is the base every value on this page was
+tuned against: a **12 N.m Simagic Alpha EVO** running at **55%, which is 6.6 N.m**, with rotation
+set to **600 degrees** - the same 600 the step above asks you to match - and the driver's own
+mechanical effects left almost off, because the mod is what puts damping and weight in. You do not
+have to copy it and the mod never reads it; it is here so "tuned at 600 degrees" has a picture
+behind it.
 
 Then the sliders. **100% is the shipped feel**, and the tall mark on each one is the recommended
 value - 100 everywhere except **Gunfire, which is 0**. Two reasons, and the second one matters more
