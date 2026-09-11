@@ -2,8 +2,9 @@
 
 # ALXGtech Mafia 1 Mods
 
-Silová zpětná vazba volantu, kamera z pohledu řidiče a H-řadička pro GOG vydání hry Mafia: The
-City of Lost Heaven. Jeden nástroj, který to vše nainstaluje i odinstaluje.
+Silová zpětná vazba volantu, kamera z pohledu řidiče a H-řadička pro **GOG vydání, v1.3 build
+16073**, hry Mafia: The City of Lost Heaven. Jeden nástroj, který to vše nainstaluje i
+odinstaluje.
 
 ![ALXGtech Mafia 1 Mods - silová zpětná vazba, kamera z pohledu řidiče, H-řadička a VR v přípravě](docs/img/banner.png)
 

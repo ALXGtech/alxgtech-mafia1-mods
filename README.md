@@ -2,8 +2,9 @@ English | [Русский](README.ru.md) | [Čeština](README.cs.md)
 
 # ALXGtech Mafia 1 Mods
 
-Force feedback, a first-person driving camera and an H-shifter gearbox for the GOG release of
-Mafia: The City of Lost Heaven, in one utility that installs and removes them.
+Force feedback, a first-person driving camera and an H-shifter gearbox for the **GOG release,
+v1.3 build 16073**, of Mafia: The City of Lost Heaven, in one utility that installs and removes
+them.
 
 ![ALXGtech Mafia 1 Mods - force feedback, first-person camera, H-shifter, and VR in progress](docs/img/banner.png)
 
