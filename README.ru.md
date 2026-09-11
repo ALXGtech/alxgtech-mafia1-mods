@@ -1,4 +1,4 @@
-[English](README.md) | Русский | [Čeština](README.cs.md)
+[English](README.md) | Русский | [Čeština](README.cs.md) | [Polski](README.pl.md)
 
 # ALXGtech Mafia 1 Mods
 
