@@ -10,7 +10,7 @@
 #ifndef ALXG_VERSION_H
 #define ALXG_VERSION_H
 
-#define ALXG_VERSION "2.0.0"
+#define ALXG_VERSION "2.0.1"
 
 /* THE NAME, in ONE place. Alex settled it on 2026-08-12 in two steps: first "ALXG Tech Mafia
    Mods", then - having thought about it - a single-word nickname. His reason, translated:

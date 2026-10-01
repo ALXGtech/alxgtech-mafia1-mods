@@ -1231,9 +1231,12 @@ static void PageFfbPoll(void){
         /* The two facts this line can carry, in priority order. A chosen device that is not here
            outranks anything the status file says: it is about to become a substitution, and saying
            so BEFORE the game runs is the only warning that arrives in time. */
+        /* Two lines at most - the box is 32 px. The dropdown's face already says "the wheel you
+           chose is not plugged in", so this line need not say it again; it was three lines and
+           its last one fell off the box (the 2.0 screenshots, with the base switched off). */
         if(chosen==FFBDEV_GONE)
-            wsprintfA(t,"the wheel you chose is not plugged in - %s. The mod will fall back to the "
-                        "first device offered.",ffb_device);
+            wsprintfA(t,"%s is not plugged in - the mod will take the first device offered",
+                      ffb_device);
         /* Nothing when there is no device: the dropdown's own face already says so, and the same
            sentence twice on one line reads as two different problems. */
         else if(ffbdev_n==0)
@@ -1583,9 +1586,16 @@ static void ffb_MkRow(HWND h,int i){
     ffb_reset[i]=MkBtn(h,"",0,0,20,20,FF_ID_RESET0+i);
     ShowWindow(ffb_reset[i],SW_HIDE);
     ffb_slider[i]=MkSliderOps(h,0,0,g->slW,26,FF_ID_SLIDER0+i,&FFB_SLIDER_OPS);
+    /* QUIET, because an EDIT created with text reports EN_CHANGE while it is being created - and
+       the box handler took that for the user typing "100" over a page that had loaded nothing
+       yet, marked the page changed, and the first flush wrote mafia_ffb.ini and a preset into
+       whatever folder the window was opened on, force feedback installed or not. Traced on
+       2026-10-01 with a side build logging every PageDirty: twelve, one per box, all from here. */
+    ffb_quiet=1;
     ffb_box[i]=CreateWindowExA(WS_EX_CLIENTEDGE,"EDIT","100",
         WS_CHILD|WS_VISIBLE|ES_RIGHT|ES_AUTOHSCROLL,0,0,56,22,h,
         (HMENU)(INT_PTR)(FF_ID_BOX0+i),NULL,NULL);
+    ffb_quiet=0;
     SendMessageA(ffb_box[i],WM_SETFONT,(WPARAM)g_fField,TRUE);
     ffb_unit[i]=MkTextF(h,SUNIT[i],0,0,g->unW,18,FF_ID_UNIT0+i,g_fField,0);
     ffb_hint[i]=MkTextF(h,SHINT[i],0,0,g->hnW,18,FF_ID_HINT0+i,g_fSmall,0);
@@ -1716,7 +1726,9 @@ static void PageFfbCreate(HWND h){
      * translated: *"The wheel choice must be literally one line."*
      * 88, not 64: at 64 the section face drew "WHEE". Bounds are written down rather than
      * eyeballed: drop 96..516   refresh 526..676   test 686..886   held 896..1268. */
-    MkTextF(h,"WHEEL",COL_LABEL,y+6,88,20,FF_ID_SECT0+4,g_fSection,0);
+    /* 22 tall, not 20: the section face is 21 px, so a 20 px box cut its last row - invisible on
+       capitals, and exactly what STClipped exists to say out loud */
+    MkTextF(h,"WHEEL",COL_LABEL,y+6,88,22,FF_ID_SECT0+4,g_fSection,0);
     ffb_devDrop=MkBtn(h,"",COL_LABEL+96,y,420,30,FF_ID_DEVDROP);
     ffb_devRefresh=MkBtn(h,"Refresh list",COL_LABEL+526,y,150,30,FF_ID_DEVREFRESH);
     ffb_devTest=MkBtn(h,"Test - push the wheel",COL_LABEL+686,y,200,30,FF_ID_DEVTEST);
@@ -1733,7 +1745,7 @@ static void PageFfbCreate(HWND h){
      * then the two columns". Every other number here is a function of it.
      * The header and its sentence share a line - his, on the page growing back the first time:
      * "squeeze it vertically anyway, we squeezed and squeezed and it stretched out again". */
-    MkTextF(h,"WHEEL ROTATION RANGE",COL_LABEL,y+3,270,20,FF_ID_SECT0,g_fSection,0);
+    MkTextF(h,"WHEEL ROTATION RANGE",COL_LABEL,y+3,270,22,FF_ID_SECT0,g_fSection,0);
     MkText(h,FFB_DOR_TEXT,COL_LABEL+280,y+5,W_FULL-280,18,0);
     y+=26;
     {   /* 600 keeps a wider face and the larger figure: it is the range every constant in this

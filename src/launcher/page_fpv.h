@@ -139,8 +139,13 @@ static const char *FPHINT[FP_NROW] = {
     "how close a thing can get before it stops being drawn",
     "+ tips the view up, - tips it down. 0 is level",
     /* The one row on this page that is not live, and it has to say so itself: the banner above
-       is green because everything else here reaches a running game in a second. */
-    "86 fits a 16:9 screen; the game ships 70. Patches Game.exe - restart Mafia" };
+       is green because everything else here reaches a running game in a second. ONE LINE of
+       300 px: the longer sentence wrapped, and the half that fell off the box was "restart
+       Mafia" - the one thing this hint exists to say (the 2.0 screenshots, 2026-10-01). */
+    "86 fits a 16:9 screen, the game ships 70 - restart Mafia" };
+/* The unit beside each box. Every row said "cm" until 2026-10-01, so the field of view read
+   "86 cm" - the two angle rows are degrees: pitch_deg in the ini, and the exe's own FOV. */
+static const char *FPUNIT[FP_NROW] = { "cm", "cm", "cm", "cm", "deg", "deg" };
 
 static int  fp_val[FP_NROW];
 static int  fp_level = 1;           /* lock_roll */
@@ -530,17 +535,22 @@ static void PageFpvCreate(HWND h){
     /* One line beside it, not a paragraph - the button already says what the state does. The FFB
        page dropped its paragraph for the same reason: "too strong" next to a control that can
        simply say what it is. */
+    /* TWO lines, level with the 28 px button. It was given one line of 16 px and has needed two
+       since the day it was written, so every player saw it stop at "Only the radar and the" -
+       Alex photographed that on 2026-08-14, and it shipped in 1.4.3 and 2.0.0 regardless. */
     MkTextF(h,"Mafia's interface was drawn for a 4:3 screen. Only the radar and the speedometer "
               "are corrected, and only while you are in a car.",
-            FPC_SLIDER+312,y+6,FP_R-FPC_SLIDER-312,16,FP_ID_NOTE,g_fSmall,0);
+            FPC_SLIDER+312,y,FP_R-FPC_SLIDER-312,28,FP_ID_NOTE,g_fSmall,0);
     y+=36;
     CreateWindowExA(0,"STATIC","",WS_CHILD|WS_VISIBLE|SS_ETCHEDHORZ,FPC_LABEL,y,FP_W,2,h,
                     NULL,NULL,NULL);
     y+=12;
 
-    MkTextF(h,"WHERE THE DRIVER'S EYE SITS",FPC_LABEL,y+3,330,20,FP_ID_SECT,g_fSection,0);
-    MkText(h,"centimetres from the car's own centre - the marked value on each slider is the seat "
-             "set at the wheel",FPC_LABEL+340,y+5,FP_R-FPC_LABEL-340,18,0);
+    MkTextF(h,"WHERE THE DRIVER'S EYE SITS",FPC_LABEL,y+3,330,22,FP_ID_SECT,g_fSection,0);
+    /* One line, and it was two: "...is the seat set at the wheel" lost its last four words to the
+       box edge. Each row now carries its own unit, so this says only what the marks are. */
+    MkText(h,"cm from the car's own centre - the mark on each slider is the default",
+           FPC_LABEL+340,y+5,FP_R-FPC_LABEL-340,18,0);
     y+=26;
     MkBtn(h,"Back to the default seat",FPC_LABEL,y,220,28,FP_ID_SEATREF);
     /* The numbers here MUST match FPREF above. They did not for a day: the button said
@@ -560,7 +570,7 @@ static void PageFpvCreate(HWND h){
         fp_box[i]=CreateWindowExA(0,"EDIT","",WS_CHILD|WS_VISIBLE|ES_RIGHT|ES_AUTOHSCROLL,
                                   FPC_BOX,y+3,58,20,h,(HMENU)(INT_PTR)(FP_ID_BOX0+i),NULL,NULL);
         SendMessageA(fp_box[i],WM_SETFONT,(WPARAM)g_fField,TRUE);
-        MkTextF(h,"cm",FPC_BOX+62,y+7,24,16,FP_ID_NOTE,g_fSmall,0);
+        MkTextF(h,FPUNIT[i],FPC_BOX+62,y+7,24,16,FP_ID_NOTE,g_fSmall,0);
         fp_hint[i]=MkTextF(h,FPHINT[i],FPC_HINT,y+7,FPW_HINT,16,FP_ID_HINT0+i,
                            g_fSmall,0);
         y+=27;
@@ -580,8 +590,10 @@ static void PageFpvCreate(HWND h){
     fp_level_btn=MkBtn(h,"Locks to horizon",FPC_SLIDER,y,150,28,FP_ID_LEVEL);
     fp_tilt_btn =MkBtn(h,"Rolls with the car",FPC_SLIDER+160,y,190,28,FP_ID_TILT);
     y+=30;
-    MkTextF(h,"Locks to horizon is the recommended setting for immersion - it is what he drove. "
-              "Rolling with the car is closer to a real head and harder to watch.",
+    /* One line: the sentence wrapped and lost "watch." - and it said "it is what he drove", a
+       line about Alex in the third person on a page every player reads. Cut 2026-10-01. */
+    MkTextF(h,"Locks to horizon is the recommended setting for immersion. Rolling with the car is "
+              "closer to a real head and harder to watch.",
             FPC_SLIDER,y,FP_R-FPC_SLIDER,16,FP_ID_NOTE,g_fSmall,0);
     y+=22;
 

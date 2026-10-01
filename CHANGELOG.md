@@ -4,6 +4,30 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic
 versioning.
 
+## [2.0.1] - 2026-10-01
+
+A fix release for the utility. The four mod files are byte for byte the ones in 2.0.0, so a
+2.0.0 install needs only the new `ALXGtech Mafia 1 Mods.exe` - nothing has to be switched off and
+on again.
+
+### Fixed
+
+- **Opening the utility no longer creates force feedback settings files.** In 1.4.3 and 2.0.0,
+  merely opening the window wrote `ALXG mods\mafia ffb setup\mafia_ffb.ini` and `profiles\p1.ini` within
+  half a second, into whatever game folder it was pointed at - including one where force feedback
+  was not installed. They are now written only when something on the Force Feedback tab changes or
+  the mod is switched on.
+- **No text is cut off any more.** Four notes on the First person tab ran past their boxes and
+  lost their ends - among them the field of view's "restart Mafia", on the one setting of that tab
+  that does not reach a running game. The line the Force Feedback tab shows for a chosen wheel
+  that is not plugged in had the same fault.
+- **Field of view and Look up / down are labelled in degrees**, not centimetres.
+- **The comments in `mafia_fp.ini` match the settings under them.** Several had drifted: the seat
+  keys were said to ship unbound and two of their pairs were described the wrong way round, the
+  camera view was said to be 9 above a 13, and keys that ship switched off were described as
+  working. Only comments changed - every setting is the same as in 2.0.0. The installer never
+  overwrites an existing `mafia_fp.ini`, so this reaches new installs only.
+
 ## [2.0.0] - 2026-10-01
 
 A major version, on purpose. The force feedback is a new model of the road rather than a retune of

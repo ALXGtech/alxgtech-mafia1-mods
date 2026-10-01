@@ -203,7 +203,12 @@ static const char *OUR_FP_INI_MD5[] = {
     "6b7eb4cdba02d287d6d2b056e8aeceaf",  /* the seat that ships: 150 / -3 / -31, near 42, view_mode 13 */
     "4cad19eefcd28ccd3cef103cf851df71",  /* the settled seat: 150 / 3 / -25, near 36, roll lock */
     "88c3783693a5f28aa0abff1386d048e8",  /* 2026-09-13: comments only - F1..F5 are the FFB preset
-                                            bank again, and the seat direction table was wrong */
+                                            bank again, and the seat direction table was wrong;
+                                            this is the one 2.0.0 shipped */
+    "78f4aee119cd59b2af5a1e8d2585ac0a",  /* 2026-10-01: comments only - they now describe the
+                                            values under them: seat keys F1..F6 as shipped,
+                                            view 13, HOME and the pitch trim retired, the scene
+                                            dump off. Every value byte-identical to 88c37836 */
 };
 /* THE TWO ROWS AT THE TOP WERE MISSING AND THAT WAS A REAL DEFECT, found 2026-08-14 while
    shipping 1.2.1. The file this patcher INSTALLS has to be recognisable as ours or an uninstall

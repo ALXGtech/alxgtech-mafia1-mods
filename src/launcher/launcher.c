@@ -825,6 +825,48 @@ static int STFits(HFONT f,const char *s,int w){
     SelectObject(dc,o); DeleteDC(dc);
     return sz.cx<=w;
 }
+/* EVERY TEXT THE WINDOW SHOWS FITS ITS BOX - measured the way the control itself wraps it, in the
+   font it was given, for every static on every page. STFits above checks named strings one at a
+   time; this is the class. A caption that needs two lines in a box one line tall prints the first
+   line and drops the rest without any mark, and nothing on the screen says text is missing.
+   Alex photographed exactly that on 2026-08-14 - the wide-screen note stopping at "Only the radar
+   and the" - and it still shipped in 1.4.3 and 2.0.0, because no check ever walked the First
+   person page: the per-string checks all lived on the Force Feedback one. Found again on
+   2026-10-01 in the 2.0 screenshots, with four more like it on the same page. */
+static int g_stClip;
+static BOOL CALLBACK STClipOne(HWND w,LPARAM lp){
+    char cls[16],t[600],what[220]; RECT box,need; HDC dc; HGDIOBJ old; HFONT f;
+    LONG st,type; UINT fl=DT_CALCRECT|DT_EXPANDTABS;
+    (void)lp;
+    if(!GetClassNameA(w,cls,sizeof cls)||lstrcmpiA(cls,"Static")) return TRUE;
+    st=GetWindowLongA(w,GWL_STYLE);
+    if(!(st&WS_VISIBLE)) return TRUE;
+    type=st&SS_TYPEMASK;
+    if(type!=SS_LEFT&&type!=SS_CENTER&&type!=SS_RIGHT&&type!=SS_LEFTNOWORDWRAP) return TRUE;
+    t[0]=0; GetWindowTextA(w,t,sizeof t);
+    if(!t[0]) return TRUE;
+    GetClientRect(w,&box);
+    fl|=(type==SS_LEFTNOWORDWRAP)?DT_SINGLELINE:DT_WORDBREAK;
+    if(st&SS_NOPREFIX) fl|=DT_NOPREFIX;
+    need=box; need.bottom=need.top;          /* DT_CALCRECT grows it to the text */
+    dc=GetDC(w); f=(HFONT)SendMessageA(w,WM_GETFONT,0,0);
+    old=SelectObject(dc,f?(HGDIOBJ)f:GetStockObject(SYSTEM_FONT));
+    DrawTextA(dc,t,-1,&need,fl);
+    SelectObject(dc,old); ReleaseDC(w,dc);
+    if(need.right-need.left>box.right-box.left||need.bottom-need.top>box.bottom-box.top){
+        wsprintfA(what,"cut off: \"%.80s\" needs %dx%d px, its box is %dx%d",t,
+                  need.right-need.left,need.bottom-need.top,box.right-box.left,box.bottom-box.top);
+        STCheck(what,0);
+        g_stClip++;
+    }
+    return TRUE;
+}
+/* every static under `root`, and `root` itself when it is one */
+static int STClipped(HWND root){
+    g_stClip=0;
+    if(root){ STClipOne(root,0); EnumChildWindows(root,STClipOne,0); }
+    return g_stClip;
+}
 static int STFfb(const char *path,const char *key){
     return (int)(LONG)GetPrivateProfileIntA("ffb",key,(UINT)-12345,path);
 }
@@ -881,6 +923,30 @@ static int SelfTest(const char *stockExe){
 
     BuildUi(SW_HIDE);
 
+    /* ---- OPENING THE WINDOW WRITES NOTHING INTO THE FOLDER -----------------------------------
+     * Found 2026-10-01: the window, opened on a folder holding nothing but a stock Game.exe, wrote
+     * ALXG mods\mafia ffb setup\mafia_ffb.ini and profiles\p1.ini within half a second, with no
+     * click and nothing in the log - into a game where force feedback was not even installed.
+     * The Force Feedback page's twelve number boxes report EN_CHANGE while they are being CREATED,
+     * the page took each one for the user typing, and the first 300 ms flush wrote the page out.
+     * (Traced with a side build that logged every PageDirty: twelve calls, all from the box
+     * handler, all in the same tick, before anything had been loaded.)
+     * So: nothing may be waiting to be written when the window has merely opened, and a flush on
+     * a folder with nothing installed must leave nothing behind. Every tab is asked, not only the
+     * one that did it. */
+    {   int k,waiting=0;
+        for(k=0;k<LNTAB;k++) if(g_pending[k]){
+            wsprintfA(what,"tab %d has a write waiting before anybody touched anything",k);
+            STCheck(what,0); waiting++;
+        }
+        STCheck("opening the window leaves no page with a write waiting",waiting==0);
+        PageFlush();
+        SCpy(p,scr); SCat(p,"\\ALXG mods");
+        STCheck("...and the first flush on a folder with nothing installed creates nothing in it",
+                GetFileAttributesA(p)==INVALID_FILE_ATTRIBUTES);
+    }
+    STCheck("with every mod off, every text on every page fits its box",STClipped(g_frame)==0);
+
     for(tab=0;tab<LNTAB;tab++){
         if(!LTABS[tab].tag) continue;
         wsprintfA(what,"%s starts absent",LTABS[tab].name);
@@ -895,6 +961,9 @@ static int SelfTest(const char *stockExe){
         STCheck(what,g_state[tab]==JMOD_ON);
         wsprintfA(what,"with %s on, its page is live",LTABS[tab].name);
         STCheck(what,CountDisabled(tab)==0);
+        wsprintfA(what,"with %s on, every text on its page and in the header fits its box",
+                  LTABS[tab].name);
+        STCheck(what,STClipped(g_page[tab])+STClipped(g_lamp)==0);
         wsprintfA(what,"switching %s off succeeds",LTABS[tab].name);
         STCheck(what,ToggleOff(tab)==1);
         /* Everything but the three header controls, which have to stay live or the mod could
@@ -1897,6 +1966,24 @@ static int SelfTest(const char *stockExe){
             ffb_LampText(t,3,"","",FFBV_NONE,0,0);
             STCheck("...and with the mod off, to switch it on first, and fits",
                     StrHas(t,"switch the mod on")&&STFits(g_fBody,t,W_FULL-28));
+        }
+
+        /* ---- A CHOSEN WHEEL THAT IS NOT PLUGGED IN ----
+           The wheel line's longest sentence, and the 2.0 screenshots caught it printing its last
+           line below the box when the base was switched off. A GUID cannot be broken across lines,
+           so it costs a whole line of its own. */
+        {   char was[80];
+            SCpy(was,ffb_device);
+            SCpy(ffb_device,"{00000000-1111-2222-3333-444455556666}");
+            PageFfbPoll();
+            {   char held[400]; held[0]=0;
+                if(ffb_devHeld) GetWindowTextA(ffb_devHeld,held,sizeof held);
+                STCheck("a chosen wheel that is not plugged in is said on the wheel line",
+                        FfbDevChosen(ffb_device)==FFBDEV_GONE&&StrHas(held,"not plugged in"));
+            }
+            STCheck("...and that sentence fits its box",STClipped(ffb_devHeld)==0);
+            SCpy(ffb_device,was);
+            PageFfbPoll();
         }
 
         /* ---- EVERY STRING FITS ITS BOX, in the face it is drawn in ---- */
