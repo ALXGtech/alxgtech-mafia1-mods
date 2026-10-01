@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <assemblyIdentity type="win32" name="ALXG.Mafia.Mods" version="1.0.0.0" processorArchitecture="x86"/>
+  <assemblyIdentity type="win32" name="ALXG.Mafia.Mods" version="2.0.0.0" processorArchitecture="x86"/>
 
   <!-- asInvoker, for the same reason the patcher carries it. Windows has an "installer
        detection" heuristic: a 32-bit exe with no manifest whose NAME looks like an installer is

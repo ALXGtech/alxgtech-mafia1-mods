@@ -347,6 +347,11 @@ static LRESULT CALLBACK CanvasProc(HWND h,UINT m,WPARAM w,LPARAM l){
             /* green when the build is the one everything was tuned on; ORDINARY INK when it is
                not. Never red: red is a fault, and an unknown build is a caveat (spec 3.2). */
             c=g_target.build?MAFIA_GREEN:INK;
+        else if(id==FF_ID_MODETXT&&IsWindowEnabled(child)&&ffb_ModelWarning())
+            /* red, because it IS a fault: the road model is not what drives the wheel - an
+               earlier module in the folder, or a file that switches it off. See page_ffb.h
+               ffb_ModelWarning */
+            c=MAFIA_RED;
         SetTextColor(dc,c);
         /* a label needs a BRUSH, not NULL_BRUSH: with WS_CLIPCHILDREN the parent cannot paint
            under a child, so a transparent static shows a blank rectangle where the paper should
@@ -768,6 +773,16 @@ static int WipeDir(const char *dir){
            these behind - and the NEXT run's scratch-folder-is-fresh check is what said so. */
         "mafia ffb setup\\profiles\\p1.ini","mafia ffb setup\\profiles\\p2.ini",
         "mafia ffb setup\\profiles\\p3.ini",
+        /* ...and where they have lived since 2026-08-07. The module-in-the-folder test switches the
+           FFB mod on and writes the live file, so a run that dies half way must not leave them for
+           the next run's "the scratch folder is fresh" to trip over. */
+        "ALXG mods\\mafia ffb setup\\mafia_ffb.ini",
+        "ALXG mods\\mafia ffb setup\\mafia_ffb_status.ini",
+        "ALXG mods\\mafia ffb setup\\profiles\\p1.ini","ALXG mods\\mafia ffb setup\\profiles\\p2.ini",
+        "ALXG mods\\mafia ffb setup\\profiles\\p3.ini",
+        "ALXG mods\\gearbox hshifter setup\\gearbox.ini",
+        /* the camera page's presets - written whenever that page is flushed */
+        "mafia_fp_preset1.ini","mafia_fp_preset2.ini","mafia_fp_preset3.ini",
         "ALXG mods\\install.log",
         /* our own log: BuildUi opened it in this folder, because that is where the game is */
         BRAND_NAME ".log", BRAND_NAME ".log.1",
@@ -779,7 +794,8 @@ static int WipeDir(const char *dir){
            game folder. */
         "ALXG Mafia Mods.log","ALXG Mafia Mods.log.1" };
     static const char *dirs[]={ "gearbox hshifter setup","mafia ffb setup\\profiles",
-        "mafia ffb setup","ALXG mods\\original","ALXG mods" };
+        "mafia ffb setup","ALXG mods\\mafia ffb setup\\profiles","ALXG mods\\mafia ffb setup",
+        "ALXG mods\\gearbox hshifter setup","ALXG mods\\original","ALXG mods" };
     char p[MAX_PATH]; int i;
     for(i=0;i<(int)(sizeof files/sizeof files[0]);i++){
         SCpy(p,dir); SCat(p,"\\"); SCat(p,files[i]); DeleteFileA(p);
@@ -798,6 +814,52 @@ static int IniHas(const char *path,const char *section,const char *key){
     char v[128];
     GetPrivateProfileStringA(section,key,"\x01",v,sizeof v,path);
     return v[0]!='\x01';
+}
+
+/* Does this string fit this many pixels, in the face it is drawn in? GetTextExtentPoint32 finds a
+   clipped string in a millisecond - four controls on the FFB page were repaired for exactly that,
+   each found on a photograph. */
+static int STFits(HFONT f,const char *s,int w){
+    HDC dc=CreateCompatibleDC(NULL); SIZE sz; HGDIOBJ o=SelectObject(dc,f);
+    sz.cx=0; GetTextExtentPoint32A(dc,s,(int)SLen(s),&sz);
+    SelectObject(dc,o); DeleteDC(dc);
+    return sz.cx<=w;
+}
+static int STFfb(const char *path,const char *key){
+    return (int)(LONG)GetPrivateProfileIntA("ffb",key,(UINT)-12345,path);
+}
+static int STVisible(HWND w){ return w&&(GetWindowLongA(w,GWL_STYLE)&WS_VISIBLE)!=0; }
+/* Where a control landed, in its parent's coordinates - what the layout DID, not what its table
+   says. Valid on the hidden window the self-test builds: a window keeps its rectangle when hidden. */
+static POINT STPos(HWND w){
+    RECT r; POINT p={-1,-1};
+    if(!w) return p;
+    GetWindowRect(w,&r); p.x=r.left; p.y=r.top;
+    ScreenToClient(GetParent(w),&p);
+    return p;
+}
+static int STTop(HWND w){ return STPos(w).y; }
+static int STLeft(HWND w){ return STPos(w).x; }
+/* Does any control on this page carry these words? Every descendant, buttons included. */
+static const char *g_stFind; static int g_stFound;
+static BOOL CALLBACK STFindText(HWND w,LPARAM lp){
+    char t[400]; (void)lp;
+    t[0]=0; GetWindowTextA(w,t,sizeof t);
+    if(StrHas(t,g_stFind)){ g_stFound=1; return FALSE; }
+    return TRUE;
+}
+static int STPageHas(HWND page,const char *s){
+    g_stFind=s; g_stFound=0;
+    if(page) EnumChildWindows(page,STFindText,0);
+    return g_stFound;
+}
+/* The FFB page's pending write, and ONLY that page's. PageFlush writes every page with something
+   pending, and the camera page's earlier checks leave theirs pending - flushing it here dropped a
+   mafia_fp_preset1.ini into the scratch folder that the next run then found. */
+static void STFlushFfb(void){
+    if(!g_pending[LTAB_FFB]) return;
+    g_pending[LTAB_FFB]=0;
+    g_writing[LTAB_FFB]=1; FfbSaveIni(); g_writing[LTAB_FFB]=0;
 }
 
 static int SelfTest(const char *stockExe){
@@ -1143,15 +1205,19 @@ static int SelfTest(const char *stockExe){
      * ------------------------------------------------------------------------------------ */
     {
         char ini[MAX_PATH],ini2[MAX_PATH],v[96]; int i;
-        static const int want[NSLIDER]={0,150,300,7,600,42,99,140,1,200,235,400};
+        /* the plain rows, NPLAIN of them: one key each. The road model's rows write keys of their
+           own and are checked by value further down. 400 on the crash row is the new top of the
+           travel (2026-09-30), 600 the gunfire's. */
+        static const int want[NPLAIN]={0,400,300,7,600,250};
 
         SCpy(ini,scr); SCat(ini,"\\selftest-ffb.ini");
         DeleteFileA(ini);
-        for(i=0;i<NSLIDER;i++) ffb_val[i]=100;
+        ffb_ResetValues();
+        for(i=0;i<NPLAIN;i++) ffb_val[i]=100;
         ffb_range=DOR_DEFAULT; ffb_truck=0; ffb_device[0]=0;
         ffb_SaveTo(ini,0);
         STCheck("the FFB settings file is created",file_exists(ini));
-        for(i=0;i<NSLIDER;i++){
+        for(i=0;i<NPLAIN;i++){
             wsprintfA(what,"a fresh file: %s=%d (want 100)",SKEY[i],
                       (int)GetPrivateProfileIntA("ffb",SKEY[i],-1,ini));
             STCheck(what,(int)GetPrivateProfileIntA("ffb",SKEY[i],-1,ini)==100);
@@ -1160,13 +1226,13 @@ static int SelfTest(const char *stockExe){
         STCheck("a fresh file: a truck steers like a car",
                 (int)GetPrivateProfileIntA("ffb","truck",-1,ini)==0);
 
-        for(i=0;i<NSLIDER;i++) ffb_val[i]=want[i];
+        for(i=0;i<NPLAIN;i++) ffb_val[i]=want[i];
         ffb_range=1440;
         ffb_SaveTo(ini,0);
-        for(i=0;i<NSLIDER;i++) ffb_val[i]=-1;
+        for(i=0;i<NPLAIN;i++) ffb_val[i]=-1;
         ffb_range=0;
         ffb_LoadFrom(ini);
-        for(i=0;i<NSLIDER;i++){
+        for(i=0;i<NPLAIN;i++){
             wsprintfA(what,"%s came back as %d (want %d)",SKEY[i],ffb_val[i],want[i]);
             STCheck(what,ffb_val[i]==want[i]);
         }
@@ -1238,10 +1304,7 @@ static int SelfTest(const char *stockExe){
                 DORDEG[0]<DORDEG[1]&&DORDEG[1]<DORDEG[2]&&DORDEG[2]<DORDEG[3]&&
                 DORDEG[3]<DORDEG[4]&&DORDEG[4]<DORDEG[5]&&DORDEG[5]<DORDEG[6]&&
                 DORDEG[6]<DORDEG[7]);
-        STCheck("600 is the recommended stop and is labelled as such",
-                DOR_DEFAULT==600&&RangeDriven(600));
-        STCheck("540, 720 and 1440 are labelled as never driven",
-                !RangeDriven(540)&&!RangeDriven(720)&&!RangeDriven(1440));
+        STCheck("600 is the default stop",DOR_DEFAULT==600);
         /* a value the mod refuses must never become the one on screen: the mod would keep its
            previous range and the page would be showing something that is not in force */
         ffb_range=600; ffb_SaveTo(ini,0); ffb_LoadFrom(ini);
@@ -1259,80 +1322,750 @@ static int SelfTest(const char *stockExe){
                 SliderMagnetise(&FFB_SLIDER_OPS,S_OBJ,120)==120);
         STCheck("2 on the gunfire slider snaps to zero",
                 SliderMagnetise(&FFB_SLIDER_OPS,S_GUN,2)==0);
-        STCheck("a 0..100 row still snaps to its own top",
+        STCheck("99 on the master slider snaps to the reference",
                 SliderMagnetise(&FFB_SLIDER_OPS,S_MASTER,99)==100);
 
-        STCheck("the crash SLIDER stops at the reference",SMAX[S_CRASH]==100);
-        STCheck("...and its box reaches 150",SBOXMAX[S_CRASH]==150);
-        STCheck("gunfire reaches his six times",SBOXMAX[S_GUN]==600);
+        /* HEADROOM TO 400%, his decision of 2026-09-30: players on weaker wheelbases must be able
+           to crank the force three or four times. Every force row runs 0..400 with the tall mark
+           still at 100, gunfire keeps its 600, and the box stops where the slider does - a box
+           that went further would write a value the slider cannot show. Above 100 the crash kick
+           is still clamped at the module's crash cap until the cap grows with the slider - a
+           module need, and the row's hint says so rather than the slider pretending otherwise. */
+        {
+            static const int FORCE[]={S_MASTER,S_CRASH,S_OBJ,S_PED,S_ROAD,
+                                      S_GWEIGHT,S_GPARK,S_GDRIVE,S_GTEXT};
+            int k,ok=1;
+            for(k=0;k<(int)(sizeof FORCE/sizeof FORCE[0]);k++){
+                i=FORCE[k];
+                if(SMIN[i]!=0||SMAX[i]!=400||SBOXMAX[i]!=400||SREF[i]!=100){
+                    wsprintfA(what,"%s runs 0..400 with its tall mark at 100 (has %d..%d, box %d, "
+                              "mark %d)",SNAME[i],SMIN[i],SMAX[i],SBOXMAX[i],SREF[i]);
+                    STCheck(what,0); ok=0;
+                }
+            }
+            STCheck("every force row runs 0..400%, the tall mark at 100 - all nine",ok&&k==9);
+            ok=1;
+            for(i=0;i<NSLIDER;i++) if(SMAX[i]!=SBOXMAX[i]) ok=0;
+            STCheck("on every row the box stops where the slider does",ok);
+        }
+        STCheck("gunfire keeps its six times, recommended 0 with a mark at 100",
+                SMIN[S_GUN]==0&&SMAX[S_GUN]==600&&SREF[S_GUN]==0&&SALT[S_GUN]==100);
+        STCheck("the two rows that are not forces keep their own range: 5..15 deg and 0..100",
+                SMIN[S_GBREAK]==5&&SMAX[S_GBREAK]==15&&SMIN[S_GSLIP]==0&&SMAX[S_GSLIP]==100);
+        /* the box, driven the way a player types into it: EN_CHANGE reaches the page through the
+           canvas, and a typed 999 must land on the top of the travel, not past it */
+        ffb_SetRow(S_CRASH,100);
+        SetWindowTextA(ffb_box[S_CRASH],"999");
+        STCheck("typing 999 into the crashes box gives 400, the top of its travel",
+                ffb_val[S_CRASH]==400);
+        SetWindowTextA(ffb_box[S_GUN],"999");
+        STCheck("...and into the gunfire box 600",ffb_val[S_GUN]==600);
+        ffb_SetRow(S_CRASH,450);
+        STCheck("a row set past its top is held at it",ffb_val[S_CRASH]==400);
+        ffb_SetRow(S_CRASH,want[S_CRASH]); ffb_SetRow(S_GUN,want[S_GUN]);
+        STCheck("above 100 the crash row says the big hits clip",
+                StrHas(ffb_HintFor(S_CRASH,120),"clip")&&!ffb_HintFor(S_CRASH,100)[0]);
         STCheck("gunfire reaches zero, so the tap can be silenced",
                 ffb_HintFor(S_GUN,0)[0]=='o'&&ffb_HintFor(S_GUN,0)[1]=='f');
-        STCheck("the damper says in words what a percent would hide",
-                ffb_DamperWord(200)[0]=='h'&&ffb_DamperWord(50)[0]=='l');
 
-        /* the truck pair. The DEFAULT must equal a car: shipping the unjudged x2 / x1.75 as a
-           recommendation is what makes a default look like a measurement. */
-        ffb_Recommended();
-        STCheck("back to default leaves the standing truck damper at a car",
-                ffb_val[S_TRKSTAT]==100);
-        STCheck("...and the moving one",ffb_val[S_TRKMOVE]==100);
-        ffb_SaveTo(ini,0);
-        STCheck("a fresh file: truck_static=100",
-                (int)GetPrivateProfileIntA("ffb","truck_static",-1,ini)==100);
-        STCheck("a fresh file: truck_moving=100",
-                (int)GetPrivateProfileIntA("ffb","truck_moving",-1,ini)==100);
-        STCheck("the recommended ceiling is x4 on both truck sliders",
-                SMAX[S_TRKSTAT]==400&&SMAX[S_TRKMOVE]==400);
-        STCheck("...and a typed value may go past it",
-                SBOXMAX[S_TRKSTAT]>400&&SBOXMAX[S_TRKMOVE]>400);
-        STCheck("the truck slider steps by 5, which is his 0.05 of a multiplier",
-                SSTEP[S_TRKSTAT]==5&&SSTEP[S_TRKMOVE]==5);
-        STCheck("a drag to 237 lands on 235, not 237",
-                SliderMagnetise(&FFB_SLIDER_OPS,S_TRKSTAT,237)==235);
-        STCheck("...and 98 still lands exactly on the reference",
-                SliderMagnetise(&FFB_SLIDER_OPS,S_TRKSTAT,98)==100);
-        STCheck("only the truck rows step - the rest stay on 1",
-                SSTEP[S_MASTER]==1&&SSTEP[S_DAMPSTAT]==1&&SSTEP[S_DAMPMOVE]==1&&SSTEP[S_SAT]==1);
-        STCheck("the truck key names match what the mod reads",
-                SKEY[S_TRKSTAT][6]=='s'&&SKEY[S_TRKMOVE][6]=='m');
-
-        /* the damper is two controls and each has its truck multiplier. A crossed-over pairing
-           draws a multiplier beside the number it does NOT multiply: invisible to the eye. */
-        STCheck("standing pairs with standing",TruckPartner(S_TRKSTAT)==S_DAMPSTAT);
-        STCheck("moving pairs with moving",TruckPartner(S_TRKMOVE)==S_DAMPMOVE);
-        STCheck("the spring has NO truck row - a truck centres like a car",
-                TruckPartner(S_SPRING)<0&&TruckPartner(S_DAMPSTAT)<0);
-        STCheck("both car damper halves travel to 200 like the old single control",
-                SMAX[S_DAMPSTAT]==200&&SMAX[S_DAMPMOVE]==200);
-        STCheck("both car halves speak in words, not only percent",
-                ffb_HintFor(S_DAMPSTAT,50)[0]=='l'&&ffb_HintFor(S_DAMPMOVE,50)[0]=='l');
-        STCheck("the damper key names are the two the mod reads",
-                SKEY[S_DAMPSTAT][7]=='s'&&SKEY[S_DAMPMOVE][7]=='m');
-
-        /* MIGRATION: a file written before the split carries `damper=`, and dropping it would
-           silently return a user who had halved the damper to the reference. */
+        /* THE OLD FEEDBACK'S KEYS ARE CARRIED, NOT EDITED, 2026-09-30. Their rows left with the
+           Legacy model - the spring, slide feel, the damper pair and the truck pair - and a key
+           this page does not write is a key it must not destroy. The road module still applies
+           five of them, so the page NAMES any that is off its reference. The single pre-split
+           `damper` is read the way the module reads it (ffb_settings.c: the default of both
+           halves) and is otherwise carried like the rest - no longer migrated by a save. */
         DeleteFileA(ini);
         WritePrivateProfileStringA("ffb","master","100",ini);
+        WritePrivateProfileStringA("ffb","spring","150",ini);
+        WritePrivateProfileStringA("ffb","sat","200",ini);
         WritePrivateProfileStringA("ffb","damper","40",ini);
-        for(i=0;i<NSLIDER;i++) ffb_val[i]=-1;
+        WritePrivateProfileStringA("ffb","truck_moving","800",ini);
         ffb_LoadFrom(ini);
-        STCheck("old damper=40 became damper standing 40",ffb_val[S_DAMPSTAT]==40);
-        STCheck("...and damper moving 40",ffb_val[S_DAMPMOVE]==40);
-        STCheck("...and nothing else moved",ffb_val[S_SPRING]==100&&ffb_val[S_SAT]==100);
-        WritePrivateProfileStringA("ffb","damper_moving","170",ini);
-        ffb_LoadFrom(ini);
-        STCheck("an explicit key beats the legacy one",ffb_val[S_DAMPMOVE]==170);
-        STCheck("...while the half with no explicit key keeps the legacy value",
-                ffb_val[S_DAMPSTAT]==40);
+        STCheck("the old single damper=40 is read as the module reads it - both halves 40",
+                ffb_old[1]==40&&ffb_old[2]==40);
+        STCheck("...slide feel and the truck damper as written, the other truck half at 100",
+                ffb_old[0]==200&&ffb_old[4]==800&&ffb_old[3]==100);
+        {
+            char note[400];
+            ffb_OldNote(note,sizeof note);
+            STCheck("the page names the old values the road model still applies",
+                    StrHas(note,"slide feel 200%")&&StrHas(note,"old parking damper 40%")&&
+                    StrHas(note,"old driving damper 40%")&&
+                    StrHas(note,"truck driving damper 800%")&&!StrHas(note,"truck parking"));
+            note[0]=0;
+            if(ffb_noteOld) GetWindowTextA(ffb_noteOld,note,sizeof note);
+            STCheck("...on the page itself, under the columns",StrHas(note,"slide feel 200%"));
+        }
         /* the presence probe itself, because getting it wrong is silent: GetPrivateProfileInt
            returns UINT, so a `< 0` sentinel test compiles, runs, and is never true */
         STCheck("KeyPresent sees a key that is there",ffb_KeyPresent(ini,"damper"));
         STCheck("KeyPresent does not see one that is not",!ffb_KeyPresent(ini,"damper_static"));
+        ffb_SetRow(S_MASTER,90);
         ffb_SaveTo(ini,0);
-        STCheck("saving does not write the legacy key back",!ffb_KeyPresent(ini,"damper"));
-        STCheck("...and the split keys are there afterwards",
-                ffb_KeyPresent(ini,"damper_static")&&ffb_KeyPresent(ini,"damper_moving"));
+        STCheck("a save carries every old key exactly: spring 150, sat 200, damper 40, "
+                "truck_moving 800",
+                STFfb(ini,"spring")==150&&STFfb(ini,"sat")==200&&STFfb(ini,"damper")==40&&
+                STFfb(ini,"truck_moving")==800);
+        STCheck("...and writes none it was not given - no damper halves, no truck_static",
+                !IniHas(ini,"ffb","damper_static")&&!IniHas(ini,"ffb","damper_moving")&&
+                !IniHas(ini,"ffb","truck_static"));
+        STCheck("...while the slider that moved wrote",STFfb(ini,"master")==90);
+        {   /* the longest such line, every value three digits, fits the page */
+            char note[400]; int k;
+            for(k=0;k<NOLD;k++) ffb_old[k]=800;
+            ffb_OldNote(note,sizeof note);
+            STCheck("the note with all five old values fits one line of the page",
+                    StrHas(note,"(mafia_ffb.ini)")&&STFits(g_fSmall,note,W_FULL));
+            for(k=0;k<NOLD;k++) ffb_old[k]=100;
+            ffb_OldNote(note,sizeof note);
+            STCheck("...and says nothing when every one is on its reference",!note[0]);
+        }
         DeleteFileA(ini);
+
+        /* A SLIDER MUST NOT BE ABLE TO DELETE THE MODEL, 2026-09-14.
+           ini_carry_verify.c proves the helper on its own; this proves the WIRING, through the
+           real save the buttons call. Until this date the page preserved a hand-written list of
+           seven keys and destroyed the rest of [ffb] - by then the module read fifty-five more
+           and the bench file held 245, so one drag would have taken the approved speed curve,
+           the F-key banks and the roll and crash trims with it.
+           The keys below are the real ones, not invented: ground_spd6_pct is a point on the
+           curve he specified band by band, preset7_sat_k a bank his F-keys address, and
+           road_roll_gain_pct / crash_trim_pct the two v813 trims awaiting his drive. */
+        WritePrivateProfileStringA("ffb","master","100",ini);
+        WritePrivateProfileStringA("ffb","ground","1",ini);
+        WritePrivateProfileStringA("ffb","ground_spd6_pct","84",ini);
+        WritePrivateProfileStringA("ffb","preset7_sat_k","7875",ini);
+        WritePrivateProfileStringA("ffb","road_roll_gain_pct","25",ini);
+        WritePrivateProfileStringA("ffb","crash_trim_pct","85",ini);
+        WritePrivateProfileStringA("ffb","diag","1",ini);
+        ffb_LoadFrom(ini);
+        ffb_val[S_MASTER]=60;              /* the drag that used to cost him the file */
+        ffb_SaveTo(ini,0);
+        STCheck("a slider save keeps the ground channel switched on",
+                GetPrivateProfileIntA("ffb","ground",0,ini)==1);
+        STCheck("...keeps the approved speed curve",
+                GetPrivateProfileIntA("ffb","ground_spd6_pct",0,ini)==84);
+        STCheck("...keeps the F-key banks",
+                GetPrivateProfileIntA("ffb","preset7_sat_k",0,ini)==7875);
+        STCheck("...keeps the roll and crash trims",
+                GetPrivateProfileIntA("ffb","road_roll_gain_pct",0,ini)==25&&
+                GetPrivateProfileIntA("ffb","crash_trim_pct",0,ini)==85);
+        STCheck("...keeps diag, so the next drive still writes a log",
+                GetPrivateProfileIntA("ffb","diag",0,ini)==1);
+        STCheck("...and the slider it was sent to move did move",
+                GetPrivateProfileIntA("ffb","master",0,ini)==60);
+        DeleteFileA(ini);
+
+        /* ONE FEEDBACK MODEL, 2026-09-30. His corrections of that evening took the selector of
+           three down to one - no Legacy ("whoever needs it will install the old 1.4.3 by hand"),
+           then no developers' feedback. The page chooses no model, so it must neither write nor
+           own the two keys that did: `ffb_mode` and `ground` are carried exactly as a file has
+           them, and the module's handling of them is left alone (GroundReadIni: ffb_mode 0 = the
+           road model, 1 or 2 = off, anything else or absent = `ground` decides, default on). */
+        DeleteFileA(ini);
+        ffb_ResetValues();
+        ffb_SaveTo(ini,0);
+        STCheck("a fresh file names no model - no ffb_mode, no ground",
+                !IniHas(ini,"ffb","ffb_mode")&&!IniHas(ini,"ffb","ground"));
+        {   int ok=1;
+            for(i=0;FFB_OWNED[i];i++)
+                if(SEq(FFB_OWNED[i],"ffb_mode")||SEq(FFB_OWNED[i],"ground")) ok=0;
+            STCheck("...and the page does not own either",ok); }
+        WritePrivateProfileStringA("ffb","ffb_mode","2",ini);
+        WritePrivateProfileStringA("ffb","ground","0",ini);
+        ffb_LoadFrom(ini);
+        ffb_SetRow(S_MASTER,70);
+        ffb_SaveTo(ini,0);
+        STCheck("a file's own ffb_mode=2 and ground=0 survive a save untouched",
+                STFfb(ini,"ffb_mode")==2&&STFfb(ini,"ground")==0&&STFfb(ini,"master")==70);
+        /* ...and a file that switches the road model off is SAID, because every slider on the
+           page then moves nothing */
+        STCheck("the page reads that file as asking for the developers' feedback, and says so",
+                ffb_FileModel()==2&&ffb_ModelWarning()&&
+                StrHas(ffb_ModelWarning(),"ffb_mode = 2"));
+        {   char line[400]; line[0]=0;
+            if(ffb_modeText) GetWindowTextA(ffb_modeText,line,sizeof line);
+            STCheck("...on the red line above the sliders, which is shown and given room",
+                    StrHas(line,"ffb_mode = 2")&&STVisible(ffb_modeText)&&ffb_laidWarn==1); }
+        WritePrivateProfileStringA("ffb","ffb_mode","1",ini);
+        ffb_LoadFrom(ini);
+        STCheck("ffb_mode=1 (the old feedback) reads as the road model switched off",
+                ffb_FileModel()==1&&ffb_ModelWarning()&&
+                StrHas(ffb_ModelWarning(),"switches the road model off"));
+        WritePrivateProfileStringA("ffb","ffb_mode",NULL,ini);
+        ffb_LoadFrom(ini);
+        STCheck("with no ffb_mode, ground=0 switches it off too, as the module reads it",
+                ffb_FileModel()==1);
+        WritePrivateProfileStringA("ffb","ffb_mode","7",ini);
+        WritePrivateProfileStringA("ffb","ground",NULL,ini);
+        ffb_LoadFrom(ini);
+        STCheck("an ffb_mode the module ignores leaves it to ground - absent, so the road model",
+                ffb_FileModel()==0&&!ffb_ModelWarning());
+        WritePrivateProfileStringA("ffb","ffb_mode","0",ini);
+        WritePrivateProfileStringA("ffb","ground","0",ini);
+        ffb_LoadFrom(ini);
+        STCheck("ffb_mode=0 is the road model whatever ground says - no warning",
+                ffb_FileModel()==0&&!ffb_ModelWarning());
+        {   char line[400]; line[0]=0;
+            if(ffb_modeText) GetWindowTextA(ffb_modeText,line,sizeof line);
+            STCheck("...and with no reason the red line is empty, hidden and takes no room",
+                    !line[0]&&!STVisible(ffb_modeText)&&ffb_laidWarn==0); }
+        DeleteFileA(ini);
+        ffb_fileMode=-1; ffb_fileGround=1;
+
+        /* ================= 2026-09-30: THE UTILITY OF THE 2026 ROAD MODEL =================
+         * docs\UTILITY-CHANGES-v821.md B1-B5 with the owner's decisions. Every check reads the
+         * FILE the page wrote or a control's own state, not only the variable behind it. */
+
+        /* ---- his reference IS 100%: a file written at the tall marks holds his numbers ---- */
+        {
+            static const char *K[NGK]={"ground_sat_k","ground_caster_k","ground_opt_deg",
+                "ground_damp_stand","ground_damp_move_pct","ground_damp_slip","ground_detail_k",
+                "ground_detail_lim"};
+            /* memory\the-approved-driving-feel.md, the table he confirmed on 2026-09-30 - written
+               out here rather than read from GREF, or the check would be GREF agreeing with itself */
+            static const int V[NGK]={7875,2400,9,6000,50,78,900,5000};
+            ffb_ResetValues();
+            ffb_SaveTo(ini,0);
+            for(i=0;i<NGK;i++){
+                wsprintfA(what,"at the reference the file holds his number: %s=%d (want %d)",
+                          K[i],STFfb(ini,K[i]),V[i]);
+                STCheck(what,STFfb(ini,K[i])==V[i]);
+            }
+            for(i=NPLAIN;i<NSLIDER;i++){
+                wsprintfA(what,"...and %s sits on its tall mark, %d",SNAME[i],SREF[i]);
+                STCheck(what,ffb_val[i]==SREF[i]);
+            }
+        }
+        /* ---- every slider PROPORTIONAL, both keys of a pair together ---- */
+        ffb_SetRow(S_GWEIGHT,150); ffb_SetRow(S_GBREAK,12); ffb_SetRow(S_GPARK,50);
+        ffb_SetRow(S_GDRIVE,150);  ffb_SetRow(S_GSLIP,40);  ffb_SetRow(S_GTEXT,200);
+        ffb_SaveTo(ini,0);
+        STCheck("steering weight 150% scales the aligning torque AND the caster: 11813 / 3600",
+                STFfb(ini,"ground_sat_k")==11813&&STFfb(ini,"ground_caster_k")==3600);
+        STCheck("breakaway 12 degrees writes 12",STFfb(ini,"ground_opt_deg")==12);
+        STCheck("parking damper 50% writes 3000 of 6000",STFfb(ini,"ground_damp_stand")==3000);
+        STCheck("driving damper 150% writes 75% of the profile's (the reference is 50)",
+                STFfb(ini,"ground_damp_move_pct")==75);
+        STCheck("lightness in a slide writes the share itself",STFfb(ini,"ground_damp_slip")==40);
+        STCheck("road texture 200% scales the gain AND its ceiling: 1800 / 10000",
+                STFfb(ini,"ground_detail_k")==1800&&STFfb(ini,"ground_detail_lim")==10000);
+        for(i=NPLAIN;i<NSLIDER;i++) ffb_val[i]=-1;
+        ffb_LoadFrom(ini);
+        STCheck("...and all six come back as they were set",
+                ffb_val[S_GWEIGHT]==150&&ffb_val[S_GBREAK]==12&&ffb_val[S_GPARK]==50&&
+                ffb_val[S_GDRIVE]==150&&ffb_val[S_GSLIP]==40&&ffb_val[S_GTEXT]==200);
+        /* 0% MEANS NONE - and the module reads its own 0 as the OLD heavy damper */
+        ffb_SetRow(S_GPARK,0);
+        ffb_SaveTo(ini,0);
+        STCheck("parking damper 0% is written as 1, not as the 0 the module reads as 20000",
+                STFfb(ini,"ground_damp_stand")==1);
+        ffb_LoadFrom(ini);
+        STCheck("...and reads back as 0%",ffb_val[S_GPARK]==0);
+        /* 400% OF HIS REFERENCE, key for key - the top of every road-model force row. The page
+           writes the proportion; where the module clamps below it is docs\UTILITY-MODULE-NEEDS.md
+           section 1, and the page still reads its own 400 back as 400. */
+        ffb_SetRow(S_GWEIGHT,400); ffb_SetRow(S_GPARK,400); ffb_SetRow(S_GDRIVE,400);
+        ffb_SetRow(S_GTEXT,400);
+        ffb_SaveTo(ini,0);
+        STCheck("steering weight 400% writes 31500 / 9600 - his 7875 and 2400 times four",
+                STFfb(ini,"ground_sat_k")==31500&&STFfb(ini,"ground_caster_k")==9600);
+        STCheck("road texture 400% writes 3600 / 20000",
+                STFfb(ini,"ground_detail_k")==3600&&STFfb(ini,"ground_detail_lim")==20000);
+        STCheck("parking damper 400% writes 24000, driving damper 400% writes 200",
+                STFfb(ini,"ground_damp_stand")==24000&&STFfb(ini,"ground_damp_move_pct")==200);
+        for(i=NPLAIN;i<NSLIDER;i++) ffb_val[i]=-1;
+        ffb_LoadFrom(ini);
+        STCheck("...and the page reads its own 400% back as 400% on all four",
+                ffb_val[S_GWEIGHT]==400&&ffb_val[S_GPARK]==400&&ffb_val[S_GDRIVE]==400&&
+                ffb_val[S_GTEXT]==400);
+        ffb_SetRow(S_GWEIGHT,500);
+        STCheck("the steering weight stops at 400",ffb_val[S_GWEIGHT]==400);
+        ffb_SetRow(S_GWEIGHT,0);
+        STCheck("...and goes all the way down to 0, both of its keys with it",
+                ffb_val[S_GWEIGHT]==0&&ffb_gk[GK_SATK]==0&&ffb_gk[GK_CASTER]==0);
+        ffb_SetRow(S_GBREAK,2);
+        STCheck("the breakaway stops at 5 degrees",ffb_val[S_GBREAK]==5);
+        ffb_SetRow(S_GBREAK,40);
+        STCheck("...and at 15",ffb_val[S_GBREAK]==15);
+        ffb_SetRow(S_GDRIVE,101);
+        STCheck("an odd driving damper lands on a value its key can hold",ffb_val[S_GDRIVE]==102);
+        STCheck("the breakaway slider snaps to nothing - ten degrees of travel",
+                SliderMagnetise(&FFB_SLIDER_OPS,S_GBREAK,4)==4&&
+                SliderMagnetise(&FFB_SLIDER_OPS,S_GBREAK,5)==5);
+        /* 0..400 has a real zero now, so the weight snaps like every percent row: to its
+           reference, to half the travel and to both ends, within 12 of each - nowhere else */
+        STCheck("the steering weight snaps to 100, to 200, to 400 and to 0 - and not at 150",
+                SliderMagnetise(&FFB_SLIDER_OPS,S_GWEIGHT,105)==100&&
+                SliderMagnetise(&FFB_SLIDER_OPS,S_GWEIGHT,150)==150&&
+                SliderMagnetise(&FFB_SLIDER_OPS,S_GWEIGHT,195)==200&&
+                SliderMagnetise(&FFB_SLIDER_OPS,S_GWEIGHT,390)==400&&
+                SliderMagnetise(&FFB_SLIDER_OPS,S_GWEIGHT,6)==0);
+
+        /* A PAIR NOBODY MOVED KEEPS ITS SECOND KEY - a page may write only what it read */
+        DeleteFileA(ini);
+        WritePrivateProfileStringA("ffb","ground_sat_k","7875",ini);
+        WritePrivateProfileStringA("ffb","ground_caster_k","3000",ini);
+        WritePrivateProfileStringA("ffb","ground_detail_k","900",ini);
+        WritePrivateProfileStringA("ffb","ground_detail_lim","4000",ini);
+        ffb_LoadFrom(ini);
+        ffb_SetRow(S_MASTER,90);
+        ffb_SaveTo(ini,0);
+        STCheck("a caster the page never moved survives a save: 3000",
+                STFfb(ini,"ground_caster_k")==3000);
+        STCheck("...and a texture ceiling: 4000",STFfb(ini,"ground_detail_lim")==4000);
+        STCheck("...while the slider that did move wrote",STFfb(ini,"master")==90);
+        ffb_SetRow(S_GWEIGHT,110);
+        ffb_SaveTo(ini,0);
+        STCheck("moving the weight rewrites BOTH keys from his reference: 8663 / 2640",
+                STFfb(ini,"ground_sat_k")==8663&&STFfb(ini,"ground_caster_k")==2640);
+
+        /* ---- WEIGHT BUILD-UP WITH SPEED: the three curves he drove, as tools\ground-keys.ps1
+           holds them - preset7 = I, preset8 = O, preset6 = U. Copied from THAT file, not from the
+           page's table, so the two are compared rather than one restated. ---- */
+        {
+            static const int I_[NSPD]={22,34,39,49,65,84,105,173};
+            static const int O_[NSPD]={22,34,42,60,80,100,122,190};
+            static const int U_[NSPD]={22,34,46,70,95,115,138,208};
+            static const int KMH[NSPD]={10,20,30,50,60,70,80,110};
+            const int *W[NCRV]={I_,O_,U_};
+            int c,k,ok;
+            for(c=0;c<NCRV;c++){
+                ffb_SetCurve(c);
+                ffb_SaveTo(ini,0);
+                ok=1;
+                for(k=0;k<NSPD;k++){
+                    char kn[24];
+                    wsprintfA(kn,"ground_spd%d_pct",k+1); if(STFfb(ini,kn)!=W[c][k]) ok=0;
+                    wsprintfA(kn,"ground_spd%d_kmh",k+1); if(STFfb(ini,kn)!=KMH[k]) ok=0;
+                }
+                wsprintfA(what,"build-up %s writes the curve he drove, all eight points",
+                          CRV_NAME[c]);
+                STCheck(what,ok&&ffb_CurveNow()==c);
+            }
+            WritePrivateProfileStringA("ffb","ground_spd6_pct","99",ini);
+            ffb_LoadFrom(ini);
+            STCheck("a curve that is none of the three reads as the file's own",ffb_CurveNow()==-1);
+            ffb_SetRow(S_MASTER,80);
+            ffb_SaveTo(ini,0);
+            STCheck("...and is kept as read by a save that did not touch it",
+                    STFfb(ini,"ground_spd6_pct")==99);
+            ffb_SetCurve(CRV_REF);
+        }
+
+        /* ---- THE DEVELOPERS' HOTKEYS: off in every file this page writes ---- */
+        DeleteFileA(ini);
+        ffb_ResetValues();
+        ffb_SaveTo(ini,0);
+        {
+            int allOff=1;
+            for(i=0;FFB_DEVKEYS[i];i++)
+                if(!IniHas(ini,"ffb",FFB_DEVKEYS[i])||STFfb(ini,FFB_DEVKEYS[i])!=0) allOff=0;
+            STCheck("a fresh file switches every developer hotkey off, all sixteen, by the "
+                    "module's own names",allOff&&FFB_NDEVKEYS==16);
+        }
+        STCheck("...the ones he named among them",
+                IniHas(ini,"ffb","road_roll_keys")&&IniHas(ini,"ffb","crash_keys")&&
+                IniHas(ini,"ffb","ground_key_on")&&IniHas(ini,"ffb","ground_key_off")&&
+                IniHas(ini,"ffb","impulse_key_on")&&IniHas(ini,"ffb","impulse_key_off")&&
+                IniHas(ini,"ffb","preset1_key")&&IniHas(ini,"ffb","preset9_key"));
+        STCheck("that file reads as released",ffb_DevKeysOff(ini));
+        WritePrivateProfileStringA("ffb","preset6_key","85",ini);   /* U, as the bench arms it */
+        STCheck("...and one live key makes it not",!ffb_DevKeysOff(ini));
+        ffb_SaveTo(ini,0);
+        STCheck("a bench key in a player's file is switched off by the next save",
+                STFfb(ini,"preset6_key")==0);
+        WritePrivateProfileStringA("ffb","dev_keys","1",ini);
+        WritePrivateProfileStringA("ffb","preset6_key","85",ini);
+        WritePrivateProfileStringA("ffb","road_roll_keys","1",ini);
+        ffb_SaveTo(ini,0);
+        STCheck("with dev_keys=1 the bench keeps its keys exactly as its file holds them",
+                STFfb(ini,"preset6_key")==85&&STFfb(ini,"road_roll_keys")==1&&
+                STFfb(ini,"dev_keys")==1);
+        DeleteFileA(ini);
+
+        /* ---- THE UNDO ARROW: back to each row's OWN reference ---- */
+        ffb_ResetValues();
+        ffb_SetRow(S_GUN,100);
+        STCheck("gunfire at 100 shows its undo arrow - 100 is not its reference",
+                STVisible(ffb_reset[S_GUN]));
+        PageFfbCommand(FF_ID_RESET0+S_GUN,0,NULL);
+        STCheck("...and the arrow puts it back to 0, not to 100, and goes away",
+                ffb_val[S_GUN]==0&&!STVisible(ffb_reset[S_GUN]));
+        ffb_SetRow(S_GBREAK,13);
+        PageFfbCommand(FF_ID_RESET0+S_GBREAK,0,NULL);
+        STCheck("the breakaway's arrow goes back to 9 degrees",ffb_val[S_GBREAK]==9);
+        ffb_SetRow(S_GSLIP,10);
+        PageFfbCommand(FF_ID_RESET0+S_GSLIP,0,NULL);
+        STCheck("lightness in a slide goes back to 78",ffb_val[S_GSLIP]==78);
+        ffb_SetRow(S_GWEIGHT,150);
+        PageFfbCommand(FF_ID_RESET0+S_GWEIGHT,0,NULL);
+        STCheck("the weight goes back to 100 and both its keys to his",
+                ffb_val[S_GWEIGHT]==100&&ffb_gk[GK_SATK]==7875&&ffb_gk[GK_CASTER]==2400);
+
+        /* ---- BACK TO DEFAULT: says what it does, does what it says ---- */
+        STCheck("Back to default no longer claims 100% for everything, nor mentions a model",
+                !StrHas(FFB_RECOMM_NOTE,"100%")&&StrHas(FFB_RECOMM_NOTE,"gunfire 0")&&
+                StrHas(FFB_RECOMM_NOTE,"not touched")&&!StrHas(FFB_RECOMM_NOTE,"model"));
+        {
+            int was=ffb_range, ok=1;
+            ffb_SetRow(S_GWEIGHT,150); ffb_SetRow(S_ROAD,360); ffb_SetRow(S_GUN,300);
+            ffb_SetRow(S_GBREAK,14); ffb_SetRow(S_MASTER,400);
+            ffb_SetCurve(CRV_HEAVY);
+            ffb_range=900;
+            ffb_Recommended();
+            for(i=0;i<NSLIDER;i++) if(ffb_val[i]!=SREF[i]) ok=0;
+            for(i=0;i<NGK;i++) if(ffb_gk[i]!=GREF[i]) ok=0;
+            STCheck("Back to default puts every row on its tall mark and every key on his number",
+                    ok);
+            STCheck("...and the build-up on Reference",ffb_CurveNow()==CRV_REF);
+            STCheck("...and leaves the range alone, as its note says",ffb_range==900);
+            ffb_range=was;
+        }
+
+        /* ---- A PRESET SWITCHES NO MODEL, and it carries the road model's keys ----
+           A preset file from the three-model days may still say ffb_mode=2. Picking it takes its
+           VALUES; its model lines stay in the preset, carried, and never reach the file the mod
+           reads. */
+        {
+            char pre[MAX_PATH],live[MAX_PATH],pk[MAX_PATH];
+            int slotWas=ffb_slotSel,k;
+            ffb_MkDirs();
+            ffb_ProfilePath(pre,1);
+            ffb_IniPath(live);
+            DeleteFileA(pre); DeleteFileA(live);
+            WritePrivateProfileStringA("ffb","ffb_mode","2",pre);
+            WritePrivateProfileStringA("ffb","ground","0",pre);
+            WritePrivateProfileStringA("ffb","master","55",pre);
+            WritePrivateProfileStringA("ffb","ground_sat_k","9000",pre);
+            ffb_SelectSlot(1);
+            STCheck("picking a preset takes its values",
+                    ffb_val[S_MASTER]==55&&ffb_gk[GK_SATK]==9000);
+            STCheck("...and not its model: the file the mod reads gets no ffb_mode and no ground",
+                    file_exists(live)&&!IniHas(live,"ffb","ffb_mode")&&
+                    !IniHas(live,"ffb","ground"));
+            STCheck("...while the preset keeps its own two lines exactly, carried",
+                    STFfb(pre,"ffb_mode")==2&&STFfb(pre,"ground")==0);
+            STCheck("the preset now carries the road model's keys",
+                    STFfb(pre,"ground_sat_k")==9000&&IniHas(pre,"ffb","ground_damp_slip")&&
+                    IniHas(pre,"ffb","ground_spd8_pct"));
+            DeleteFileA(live);
+            for(k=0;k<3;k++){ ffb_ProfilePath(pk,k); DeleteFileA(pk); }
+            ffb_slotSel=slotWas;
+            ffb_ResetValues();
+        }
+
+        /* ---- EVERY ROW IS ON THE PAGE, ONCE - asked of the layout and of the controls ---- */
+        {
+            int ok=1,side,k,old=0;
+            char lbl[64];
+            ffb_Layout();
+            for(i=0;i<NSLIDER;i++){
+                int n=0;
+                for(side=0;side<FFB_NLAY;side++){
+                    const ffb_lay *L=ffb_Lay(side);
+                    for(k=0;L[k].kind!=LI_END;k++) if(L[k].kind==LI_ROW&&L[k].arg==i) n++;
+                }
+                if(n!=1||!STVisible(ffb_slider[i])||!STVisible(ffb_box[i])){
+                    wsprintfA(what,"%s is laid out once and visible (laid out %d times)",
+                              SNAME[i],n);
+                    STCheck(what,0); ok=0;
+                }
+            }
+            STCheck("all twelve rows are on the page, each exactly once",ok&&NSLIDER==12);
+            STCheck("...and the build-up row with them",STVisible(ffb_curveBtn[CRV_REF]));
+            GetWindowTextA(ffb_label[S_ROAD],lbl,sizeof lbl);
+            STCheck("the road row is roll and curbs",SEq(lbl,"Roll and curbs"));
+            for(i=0;i<NSLIDER;i++)
+                if(SEq(SKEY[i],"spring")||SEq(SKEY[i],"sat")||SEq(SKEY[i],"damper_static")||
+                   SEq(SKEY[i],"damper_moving")||SEq(SKEY[i],"truck_static")||
+                   SEq(SKEY[i],"truck_moving")) old=1;
+            STCheck("no row of the old feedback is left - spring, slide feel, dampers, trucks",
+                    !old);
+            /* THE 1.4.3 PAGE, 2026-10-01: "the difference should be almost none - a few sliders
+               added, and that's it." Asked of the tables AND of where the controls landed. */
+            STCheck("the two columns are 1.4.3's: FORCE FEEDBACK STRENGTH and WHEEL WEIGHT, each "
+                    "heading centred in the section face over its own column",
+                    SEq(FFB_TEXT[T_HEAD_L],"FORCE FEEDBACK STRENGTH")&&
+                    SEq(FFB_TEXT[T_HEAD_R],"WHEEL WEIGHT")&&
+                    (GetWindowLongA(ffb_text[T_HEAD_L],GWL_STYLE)&SS_CENTER)&&
+                    (GetWindowLongA(ffb_text[T_HEAD_R],GWL_STYLE)&SS_CENTER)&&
+                    (HFONT)SendMessageA(ffb_text[T_HEAD_L],WM_GETFONT,0,0)==g_fSection&&
+                    (HFONT)SendMessageA(ffb_text[T_HEAD_R],WM_GETFONT,0,0)==g_fSection&&
+                    STLeft(ffb_text[T_HEAD_L])==COL_LABEL&&STLeft(ffb_text[T_HEAD_R])==COL_MID);
+            STCheck("the strength rows are on the left and the wheel-weight rows on the right",
+                    STLeft(ffb_slider[S_CRASH])==COL_SLIDER&&STLeft(ffb_slider[S_GTEXT])==COL_SLIDER&&
+                    STLeft(ffb_slider[S_GWEIGHT])==COL_MID+WW_SL_X&&
+                    STLeft(ffb_slider[S_GSLIP])==COL_MID+WW_SL_X);
+            /* HIS QUESTIONS OF 2026-10-01: "should it not be above everything?", then "if overall
+               strength also affects the steering, the steering has to sit under it - now it looks as
+               if it only acts on the left column". A row of its own above BOTH columns, asked of the
+               tables and of where the controls landed: above both headings, the steering included. */
+            STCheck("Total effects has a row of its own above both columns, in neither of them",
+                    ffb_LayHas(ffb_Lay(2),LI_ROW,S_MASTER)&&
+                    !ffb_LayHas(ffb_Lay(0),LI_ROW,S_MASTER)&&!ffb_LayHas(ffb_Lay(1),LI_ROW,S_MASTER)&&
+                    STTop(ffb_slider[S_MASTER])<STTop(ffb_text[T_HEAD_L])&&
+                    STTop(ffb_slider[S_MASTER])<STTop(ffb_text[T_HEAD_R])&&
+                    STTop(ffb_slider[S_MASTER])<STTop(ffb_slider[S_GWEIGHT]));
+            /* "put it in the centre, so it is clear it belongs to both columns" - the group from the
+               label's left edge to the hint's right edge has as much page on either side */
+            {   int l=STLeft(ffb_label[S_MASTER])-COL_LABEL;
+                int r=(COL_LABEL+W_FULL)-(STLeft(ffb_hint[S_MASTER])+ffb_HintW(S_MASTER));
+                wsprintfA(what,"...centred on the page: %d px of page on its left, %d on its right",l,r);
+                STCheck(what,l-r<=1&&r-l<=1&&l>100);
+            }
+            /* his rename of 2026-10-01: the name itself says what the row leaves out */
+            STCheck("...named Total effects (not affecting dampers), its hint naming the steering "
+                    "among what it scales",
+                    SEq(SNAME[S_MASTER],"Total effects (not affecting dampers)")&&
+                    StrHas(SHINT[S_MASTER],"steering"));
+            /* "it does not read as anything to do with gunfire" - so it is placed right under the
+               gunfire row, from that row's own edge */
+            STCheck("the gunfire note sits right under the gunfire row",
+                    STLeft(ffb_noteGun)==STLeft(ffb_label[S_GUN])&&
+                    STTop(ffb_noteGun)>STTop(ffb_slider[S_GUN])&&
+                    STTop(ffb_noteGun)-STTop(ffb_slider[S_GUN])<=R_H+2&&
+                    StrHas(FFB_NOTE_GUN,"Gunfire"));
+            STCheck("the wheel-weight table has its two halves and the seam between them, 1.4.3's "
+                    "Cars and Trucks style - the Damper half saying Overall does not scale it",
+                    StrHas(FFB_TEXT[T_SUB_STEER],"Steering")&&
+                    StrHas(FFB_TEXT[T_SUB_STEER],"build-up is how the weight grows with speed")&&
+                    StrHas(FFB_TEXT[T_SUB_DAMP],"Damper")&&
+                    StrHas(FFB_TEXT[T_SUB_DAMP],"not scaled by Total effects")&&
+                    STTop(ffb_seam)>STTop(ffb_slider[S_GBREAK])&&
+                    STTop(ffb_seam)<STTop(ffb_text[T_SUB_DAMP])&&
+                    STTop(ffb_text[T_SUB_DAMP])<STTop(ffb_slider[S_GPARK]));
+        }
+
+        /* ---- THE RANGE, 1.4.3'S AGAIN - 2026-10-01 ----
+           His words, translated: "by the law looks as silly as it gets... remove measured and by
+           the law; label 600 as recommended and leave the others as they are." */
+        {
+            RECT b; int k,one=1;
+            HWND page=g_page[LTAB_FFB];
+            for(k=0;k<NDOR;k++){
+                if(!ffb_dorBtn[k]) { one=0; continue; }
+                GetWindowRect(ffb_dorBtn[k],&b);
+                if(b.bottom-b.top!=30) one=0;
+            }
+            STCheck("every range button is one line, 30 px, as in 1.4.3",one&&DOR_BTN_H==30);
+            /* "in the previous version the description itself made it clear that 600 is the
+               default" - so the description says it, and no line under the buttons repeats it */
+            STCheck("the line beside the heading is 1.4.3's, and names 600 as the default and "
+                    "recommended",
+                    StrHas(FFB_DOR_TEXT,"what your wheel's own driver is set to")&&
+                    StrHas(FFB_DOR_TEXT,"600 is the default and recommended"));
+            STCheck("no line under the range buttons - none of the ids it ever had exists",
+                    page&&!GetDlgItem(page,5350)&&!GetDlgItem(page,5503));
+        }
+
+        /* ---- THE MODEL BLOCK IS GONE, 2026-10-01, and nothing on the page offers a model ----
+           Translated: "this block is not needed after all: there are no other options, and it only
+           makes the utility taller." Asked of the control ids, so a block that comes back under
+           its old ids says so here. */
+        {
+            HWND page=g_page[LTAB_FFB];
+            STCheck("no row names the model any more - its name, NEW plate and label are gone",
+                    page&&!GetDlgItem(page,5435)&&!GetDlgItem(page,FF_ID_SECT0+5));
+            /* by the WORDS on the page, not only the ids: a label can come back under a new id */
+            STCheck("no text on the page names the model, calls it new, or says MEASURED or BY THE "
+                    "LAW",
+                    page&&!STPageHas(page,"road model 2026")&&!STPageHas(page,"NEW ROAD MODEL")&&
+                    !STPageHas(page,"FEEDBACK MODEL")&&!STPageHas(page,"MEASURED")&&
+                    !STPageHas(page,"BY THE LAW")&&!STPageHas(page,"by the law"));
+            STCheck("the three-model selector is gone - none of its controls exists",
+                    page&&!GetDlgItem(page,5430)&&!GetDlgItem(page,5431)&&
+                    !GetDlgItem(page,5432)&&!GetDlgItem(page,5433));
+        }
+
+        /* ---- THE LAMP SAYS WHICH MODULE IS TALKING ---- */
+        {
+            char t[300];
+            ffb_LampText(t,1,"TEST WHEEL","822",FFBV_NEW,0,1);
+            STCheck("a status file carrying version=822 puts it on the lamp",StrHas(t,"v822"));
+            ffb_LampText(t,1,"TEST WHEEL","",FFBV_OLD,1,1);
+            STCheck("the 1.4.3 module, which writes no version, is named from the folder",
+                    StrHas(t,"1.4.3"));
+            ffb_LampText(t,1,"TEST WHEEL","",FFBV_OLD,0,1);
+            STCheck("...and any other earlier build of ours as one",StrHas(t,"earlier build"));
+            ffb_LampText(t,1,"TEST WHEEL","",FFBV_NEW,0,1);
+            STCheck("this version's module with no version line adds nothing to the lamp",
+                    SEq(t,"Driving effects on TEST WHEEL"));
+            ffb_LampText(t,3,"","",FFBV_NONE,0,1);
+            STCheck("never run with the mod on: the lamp says to start Mafia once, and fits",
+                    StrHas(t,"start Mafia once")&&STFits(g_fBody,t,W_FULL-28));
+            ffb_LampText(t,3,"","",FFBV_NONE,0,0);
+            STCheck("...and with the mod off, to switch it on first, and fits",
+                    StrHas(t,"switch the mod on")&&STFits(g_fBody,t,W_FULL-28));
+        }
+
+        /* ---- EVERY STRING FITS ITS BOX, in the face it is drawn in ---- */
+        {
+            static const int V[]={0,1,5,9,15,25,50,78,100,101,150,200,300,400,600};
+            int bad=0,k;
+            const char *s;
+            for(i=0;i<NSLIDER;i++){
+                const ffb_geo *g=ffb_GeoOf(i);
+                if(!STFits(g_fBody,SNAME[i],g->lblW)){
+                    wsprintfA(what,"label '%s' fits %d px",SNAME[i],g->lblW); STCheck(what,0); bad++; }
+                if(!STFits(g_fField,SUNIT[i],g->unW)){
+                    wsprintfA(what,"unit '%s' fits %d px",SUNIT[i],g->unW); STCheck(what,0); bad++; }
+                for(k=0;k<(int)(sizeof V/sizeof V[0]);k++){
+                    s=ffb_HintFor(i,V[k]);
+                    if(!STFits(g_fSmall,s,g->hnW)){
+                        wsprintfA(what,"hint '%s' fits %d px",s,g->hnW); STCheck(what,0); bad++; }
+                }
+            }
+            STCheck("every row label, unit and hint fits its box",bad==0);
+            STCheck("the build-up row's label fits",STFits(g_fBody,"Build-up with speed",WW_LBL_W));
+            bad=0;
+            for(i=0;i<NCRV;i++) if(!STFits(g_fField,CRV_NAME[i],CRV_W-10)) bad++;
+            STCheck("the three curve names fit their buttons",bad==0);
+            STCheck("the kept-curve line fits beside them",
+                    STFits(g_fSmall,FFB_CURVE_KEPT,CRV_HINT_W));
+            STCheck("the two column headings fit their columns",
+                    STFits(g_fSection,FFB_TEXT[T_HEAD_L],W_LEFT)&&
+                    STFits(g_fSection,FFB_TEXT[T_HEAD_R],W_RIGHT));
+            STCheck("the line under the strength heading fits its column",
+                    STFits(g_fBody,FFB_TEXT[T_LINE_L],W_LEFT));
+            STCheck("the table's two small headings fit their column",
+                    STFits(g_fField,FFB_TEXT[T_SUB_STEER],W_RIGHT)&&
+                    STFits(g_fField,FFB_TEXT[T_SUB_DAMP],W_RIGHT));
+            STCheck("the gunfire note fits one line of its column",
+                    STFits(g_fSmall,FFB_NOTE_GUN,W_LEFT));
+            STCheck("the Back to default note fits one line",
+                    STFits(g_fSmall,FFB_RECOMM_NOTE,W_FULL));
+            STCheck("the line beside the range heading fits",
+                    STFits(g_fBody,FFB_DOR_TEXT,W_FULL-280));
+            /* WHICH MODULE THE FOLDER HOLDS - an upgrade check, not a model. Every sentence the
+               red line above the sliders can say must fit its two full-width lines. */
+            {   int wasV=ffb_variant,was143=ffb_variant143,wasS=g_state[LTAB_FFB],
+                    wasM=ffb_fileMode,wasG=ffb_fileGround,lineW=W_FULL*2-120;
+                STCheck("this version's payload reads as this version's module",
+                        ffb_VariantOfMd5(PAYLOAD_ASI_MD5)==FFBV_NEW);
+                STCheck("the 1.4.3 module (c56669c4) reads as an earlier build of ours",
+                        ffb_VariantOfMd5(ASI_RELEASE_143_MD5)==FFBV_OLD&&
+                        is_our_asi(ASI_RELEASE_143_MD5));
+                STCheck("an md5 we never shipped reads as somebody else's",
+                        ffb_VariantOfMd5("0123456789abcdef0123456789abcdef")==FFBV_OTHER);
+                g_state[LTAB_FFB]=JMOD_ON; ffb_fileMode=-1; ffb_fileGround=1;
+                ffb_variant=FFBV_NEW; ffb_variant143=0;
+                STCheck("this version's module in the folder: no warning, no red line",
+                        !ffb_ModelWarning());
+                ffb_variant=FFBV_OLD; ffb_variant143=1;
+                STCheck("an upgrade from 1.4.3 is seen: its module still in the folder, said in "
+                        "red, and it fits the two lines",
+                        ffb_ModelWarning()&&StrHas(ffb_ModelWarning(),"release 1.4.3")&&
+                        StrHas(ffb_ModelWarning(),"switch the mod off and on")&&
+                        STFits(g_fSmall,ffb_ModelWarning(),lineW));
+                ffb_variant143=0;
+                STCheck("...and any earlier build of ours, without the number",
+                        ffb_ModelWarning()&&StrHas(ffb_ModelWarning(),"earlier build")&&
+                        STFits(g_fSmall,ffb_ModelWarning(),lineW));
+                g_state[LTAB_FFB]=JMOD_ABSENT;
+                STCheck("with the mod off an old module is no warning - the toggle installs ours",
+                        !ffb_ModelWarning());
+                g_state[LTAB_FFB]=JMOD_ON; ffb_variant=FFBV_OTHER;
+                STCheck("a module we never shipped (a bench build) is left alone, called nothing",
+                        !ffb_ModelWarning());
+                ffb_fileMode=1;
+                STCheck("the file-switches-the-model-off warning fits the two lines",
+                        ffb_ModelWarning()&&STFits(g_fSmall,ffb_ModelWarning(),lineW));
+                ffb_fileMode=2;
+                STCheck("...and the developers'-feedback one",
+                        ffb_ModelWarning()&&STFits(g_fSmall,ffb_ModelWarning(),lineW));
+                ffb_variant=wasV; ffb_variant143=was143; g_state[LTAB_FFB]=wasS;
+                ffb_fileMode=wasM; ffb_fileGround=wasG;
+            }
+        }
+
+        /* ---- THE PAGE IS SHORTER, AND A LINE TAKES ROOM ONLY WHILE IT HAS SOMETHING TO SAY ----
+           His complaint of 2026-10-01, translated: "we worked hard to make it smaller, and now it
+           has stretched vertically again" - the same one as 2026-08-05. The height is PRINTED, so
+           every report shows the number, and FFB_PAGE_MAX is the height this layout measured with
+           nothing to warn about: a page that grows back fails here first. */
+        {   int k,tallest=0,h0,t0,wasV=ffb_variant,wasM=ffb_fileMode,wasG=ffb_fileGround;
+            for(k=0;k<NOLD;k++) ffb_old[k]=100;
+            ffb_fileMode=-1; ffb_fileGround=1; ffb_variant=FFBV_NONE;
+            ffb_RefreshNotes(); ffb_Layout();
+            for(k=0;k<LNTAB;k++) if(g_contentH[k]>tallest) tallest=g_contentH[k];
+            wsprintfA(what,"the Force Feedback page is %d px tall with nothing to warn about, at "
+                      "most %d (H-shifter %d, first person %d; the window asks for %d of client)",
+                      ffb_pageH,FFB_PAGE_MAX,g_contentH[LTAB_SHIFTER],g_contentH[LTAB_FPV],
+                      TITLEBAND+HEADH+tallest+LOGH);
+            STCheck(what,ffb_pageH<=FFB_PAGE_MAX&&!ffb_laidWarn&&!ffb_laidOld);
+            /* THE WINDOW IS AS TALL AS ITS TALLEST TAB (SizeToContent), so a short Force feedback
+               page buys nothing while another tab stays tall - which is how "why so much empty
+               space under the presets?" came about on 2026-10-01: First person was 724 px against
+               this page's 680. No tab may be more than a few pixels taller than this one. */
+            wsprintfA(what,"no tab is more than 8 px taller than this page (tallest %d, this %d) - "
+                      "or this page shows that much empty paper under its presets",tallest,ffb_pageH);
+            STCheck(what,tallest<=ffb_pageH+8);
+            h0=ffb_pageH; t0=STTop(ffb_slider[S_MASTER]);
+            ffb_fileMode=2; ffb_RefreshNotes();
+            STCheck("a reason appearing gives the red line its room - the page grows by 40 px and "
+                    "everything under it moves down",
+                    ffb_pageH==h0+40&&STTop(ffb_slider[S_MASTER])==t0+40&&STVisible(ffb_modeText));
+            ffb_fileMode=-1; ffb_RefreshNotes();
+            STCheck("...and gives it back the moment the reason goes",
+                    ffb_pageH==h0&&STTop(ffb_slider[S_MASTER])==t0&&!STVisible(ffb_modeText));
+            ffb_old[0]=150; ffb_RefreshNotes();
+            STCheck("the earlier-version note takes a line only while it has one to say",
+                    ffb_pageH==h0+22&&STVisible(ffb_noteOld));
+            ffb_old[0]=100; ffb_RefreshNotes();
+            STCheck("...and none once it has nothing",ffb_pageH==h0&&!STVisible(ffb_noteOld));
+            ffb_variant=wasV; ffb_fileMode=wasM; ffb_fileGround=wasG;
+            ffb_RefreshNotes();
+        }
+        ffb_ResetValues();
+        DeleteFileA(ini);
+    }
+
+    /* ---- WHICH MODULE THE FOLDER HOLDS, on a real install - 2026-09-30 ------------------------
+     * Legacy is gone from the utility, and with it the 1.4.3 payload and the swap. What stays is
+     * the UPGRADE check: a folder that still holds an earlier module of ours is said, in red, and
+     * the page swaps nothing. The OLD case is proven above through the md5 and the page's state -
+     * a file with the 1.4.3 md5 cannot be made here without shipping it - so this drives the two
+     * ends a real folder can reach: our own module after the toggle, and a bench build left
+     * alone. Driven through the real toggle, on the scratch folder. */
+    {
+        char asi[MAX_PATH],m[33],live[MAX_PATH],pk[MAX_PATH];
+        const unsigned char *pl; size_t n=0; int k;
+        SCpy(asi,scr); SCat(asi,"\\mafia_ffb.asi");
+        ffb_IniPath(live);
+        STCheck("the 1.4.3 module is no longer inside the utility - resource 107 is gone",
+                payload(107,&n)==NULL);
+        DeleteFileA(live);
+        g_pending[LTAB_FFB]=0;      /* so only the toggle can ask for the write below */
+        STCheck("switching FFB on installs this version's module",
+                ToggleOn(LTAB_FFB)==1&&file_md5(asi,m)&&SEq(m,PAYLOAD_ASI_MD5));
+        STCheck("...which the page reads as this version's - no red line over the sliders",
+                ffb_variant==FFBV_NEW&&!ffb_ModelWarning());
+        STCheck("...and the toggle itself asks for the settings file to be written",
+                g_pending[LTAB_FFB]!=0);
+        STFlushFfb();
+        STCheck("...which then switches the developers' hotkeys OFF",
+                file_exists(live)&&ffb_DevKeysOff(live)&&!ffb_DevKeysKept(live));
+        STCheck("...and names no model",
+                !IniHas(live,"ffb","ffb_mode")&&!IniHas(live,"ffb","ground"));
+        {   /* a bench build in the folder: not ours, called nothing, and not replaced */
+            static const char J[]="not a module this build ships";
+            write_file(asi,J,sizeof J);
+            ffb_RefreshVariant();
+            STCheck("a module we never shipped reads as somebody else's, with no warning",
+                    ffb_variant==FFBV_OTHER&&!ffb_ModelWarning()&&
+                    file_md5(asi,m)&&!SEq(m,PAYLOAD_ASI_MD5));
+            /* ours back, so the switch-off below takes it out by its own journal line */
+            pl=payload(RES_ASI,&n);
+            STCheck("our own module can be put back for the switch-off",
+                    pl&&write_file(asi,pl,n)&&file_md5(asi,m)&&SEq(m,PAYLOAD_ASI_MD5));
+            ffb_RefreshVariant();
+        }
+        STCheck("switching the mod off takes it out",
+                ToggleOff(LTAB_FFB)==1&&!file_exists(asi)&&
+                JModState(scr,J_MOD_FFB)==JMOD_ABSENT);
+        DeleteFileA(live);
+        for(k=0;k<3;k++){ ffb_ProfilePath(pk,k); DeleteFileA(pk); }
     }
 
     /* Clean up before the round-trip check: the ini is ours to remove, and it was never

@@ -25,6 +25,12 @@ typedef struct {
     int dikUp, dikDown, dikMode;
     int neutralDelayMs, retryMs;
     int closedLoop;
+    /* A LATCHING SWITCH STATES THE MODE, SO THE MODE MAY BE PUT BACK. Only meaningful with
+       modeHold: a switch has a position at all times, so "what the driver wants" is never a
+       guess, and a game that disagrees with it is wrong rather than informative.
+       This is what actually answers his 2026-08-15 report. See the enforcement block in
+       GBStep. 0 restores the behaviour of every build before 2026-09-14. */
+    int modeEnforce;
 } GBCfg;
 
 typedef struct {
@@ -39,10 +45,21 @@ typedef struct {
     gb_bits prevBits[GB_MAXDEV];
     int lastMode;
     gb_ms lastModeEmit;
-    int modeCause;         /* 1 = the user's mode control, 2 = our own engage-manual */
+    int modeCause;         /* 1 = the user's mode control, 2 = our own engage-manual,
+                              3 = our own enforcement of the switch position */
+    int modeWant;          /* what the last action of OURS asked for: 1 automatic, 0 manual.
+                              Needed because "we caused this change" is not the same claim as
+                              "we wanted manual" - enforcement can ask for either, and reading
+                              our own automatic back as "nobody chose this" put the mod into a
+                              fight with itself that showed up as a car stuck in neutral. */
     int pendAuto;          /* owed: switch to automatic once a gear is engaged */
     gb_ms pendAutoAt;      /* when that debt was incurred - it EXPIRES, see GB_PENDAUTO_MS */
     int haveMode;
+    /* How many times in a row enforcement has asked for a mode it did not get. It backs off on
+       the strength of this: a mod that cannot move the game must not keep trying four times a
+       second for the length of a drive, and the count is what tells a log reader the difference
+       between "it put the box back twice" and "it is fighting something and losing". */
+    int enfTries;
 } GBState;
 
 typedef struct {
@@ -60,6 +77,11 @@ typedef struct {
     int   known;           /* was a target resolvable at all */
     int   waitingNeutral;  /* the rest position is being debounced right now */
     int   blockedAuto;     /* in automatic and respecting it - doing nothing on purpose */
+    /* WHICH mode the action is asking for: 1 automatic, 0 manual, -1 "the other one".
+       It used to be implicit because the only way to change the mode was to tap the game's key,
+       which toggles - so the caller never had to know. Since 2026-09-14 the caller can WRITE the
+       two fields the engine's own toggle writes, and a write has to know its direction. */
+    int   wantAuto;
 } GBOut;
 
 static void GBInit(GBState *s){
@@ -67,7 +89,7 @@ static void GBInit(GBState *s){
     s->sticky=-99; s->lastTarget=-99; s->respectAuto=0; s->engaged=0;
     s->blkDir=0; s->blkGear=-99; s->blkUntil=0; s->restStart=0; s->prevModeBtn=0;
     s->lastMode=-99; s->lastModeEmit=0; s->modeCause=0; s->haveMode=0; s->pendAuto=0;
-    s->pendAutoAt=0;
+    s->pendAutoAt=0; s->enfTries=0; s->modeWant=-1;
 }
 
 static int GBHeld(const gb_bits *bits,int dev,int btn){
@@ -98,8 +120,16 @@ static int GBLeverTarget(const GBCfg *c,GBState *s,const gb_bits *bits,int *know
    driver is happily in manual. */
 #define GB_PENDAUTO_MS 3000u
 
+/* How often enforcement may re-assert the switch's position, and how far it backs off once the
+   game has refused it three times running. 400 ms matches the pace every other mode step here
+   is given; 5 s is "something is holding it and we are not going to win by repeating faster". */
+#define GB_MODE_ENFORCE_MS   400u
+#define GB_MODE_ENFORCE_SLOW 5000u
+#define GB_MODE_ENFORCE_FAST_TRIES 3
+
 static GBOut GBStep(const GBCfg *c,GBState *s,const GBIn *in){
     GBOut o; o.act=GB_NONE; o.target=-99; o.known=0; o.waitingNeutral=0; o.blockedAuto=0;
+    o.wantAuto=-1;
 
     /* 1. who asked for the transmission mode we are now in */
     if(in->gearValid&&in->mode>=0){
@@ -110,7 +140,11 @@ static GBOut GBStep(const GBCfg *c,GBState *s,const GBIn *in){
                choice has to survive. This rule therefore applies in BOTH modes: a mode change we
                did not cause is the user's, and it stands until he moves the lever. */
             gb_ms dt=in->now - s->lastModeEmit;
-            if(dt<=800&&s->modeCause==2) s->respectAuto=0;      /* our own engage-manual */
+            /* A CHANGE WE CAUSED IS NOT A REQUEST FROM ANYBODY. Cause 3 joined cause 2 on
+               2026-09-14: enforcement puts the mode back where the switch says, and reading its
+               own success as "the driver just chose this" would make the next flip stick. */
+            if(dt<=800&&(s->modeCause==2||s->modeCause==3))
+                s->respectAuto=(s->modeWant>0)?1:0;
             else                         s->respectAuto=(in->mode==1);
             /* automatic with no gear engaged is a car that will not move, however the mode got
                there - so owe the manoeuvre that fixes it */
@@ -158,7 +192,54 @@ static GBOut GBStep(const GBCfg *c,GBState *s,const GBIn *in){
         if(wantAuto==1&&in->gearValid&&in->gear<1){ s->pendAuto=1; s->pendAutoAt=in->now; }
         else if(wantAuto>=0){
             s->pendAuto=0; s->lastModeEmit=in->now; s->modeCause=1;
-            o.act=GB_MODE_KEY; return o;
+            s->modeWant=wantAuto; o.act=GB_MODE_KEY; o.wantAuto=wantAuto; return o;
+        }
+
+        /* ---- THE SWITCH STATES THE MODE, SO PUT THE MODE BACK -----------------------------
+         * His report of 2026-08-15: he starts in manual, drives, and at some point the game is
+         * in automatic without him choosing it. Solved in the decompilation on 2026-09-14 -
+         * the engine re-derives the mode from `player+0xADB`, whose own initialiser writes 0,
+         * so every re-initialisation of that object drops the choice back to automatic
+         * ([[the-game-resets-the-gearbox-choice]]).
+         *
+         * THE WRITE THAT FIXES IT COULD NOT FIRE. It hangs off GB_MODE_KEY, and in exactly his
+         * case nothing produced one: the block above only acts when the switch MOVES, and the
+         * "who asked" block at the top of this function reads an unexplained flip as the
+         * driver's own choice (`respectAuto = 1`), which makes the rule below deliberately do
+         * nothing until he moves the lever. The mechanism was found and the mod still sat there.
+         *
+         * With a LATCHING switch there is nothing to infer: the switch has a position at all
+         * times and that position IS the request, so a game that disagrees with it is wrong.
+         * This is the one case where enforcing the position every cycle is right, and the drive-7
+         * objection above does not apply to it - that was about the mod fighting a KEYBOARD press
+         * within 30 ms, and this backs off to five seconds once the game has refused it three
+         * times, which is what a fight looks like from here.
+         *
+         * Only with modeHold. A momentary button has no position to enforce. */
+        if(c->modeHold&&c->modeEnforce&&wantAuto<0&&in->gearValid&&in->mode>=0){
+            int want=now?1:0;
+            if(in->mode==want){
+                s->enfTries=0;
+            } else {
+                gb_ms gap=(s->enfTries<GB_MODE_ENFORCE_FAST_TRIES)
+                          ? GB_MODE_ENFORCE_MS : GB_MODE_ENFORCE_SLOW;
+                if((gb_ms)(in->now - s->lastModeEmit)>gap){
+                    /* Asking for AUTOMATIC out of neutral is the one request that cannot be
+                       served directly - Mafia's automatic will not pull away from a neutral
+                       gearbox - so it becomes the owed manoeuvre instead, exactly as a moved
+                       switch does five lines above. */
+                    if(want==1&&in->gear<1){
+                        if(!s->pendAuto){ s->pendAuto=1; s->pendAutoAt=in->now; }
+                    } else {
+                        s->respectAuto=want;
+                        s->engaged=0;
+                        s->pendAuto=0;
+                        s->enfTries++;
+                        s->lastModeEmit=in->now; s->modeCause=3;
+                        s->modeWant=want; o.act=GB_MODE_KEY; o.wantAuto=want; return o;
+                    }
+                }
+            }
         }
     }
     /* THE OWED MANOEUVRE: automatic, but no gear engaged. The gear keys do nothing in
@@ -173,14 +254,15 @@ static GBOut GBStep(const GBCfg *c,GBState *s,const GBIn *in){
     if(s->pendAuto&&in->gearValid){
         if(in->mode==1&&in->gear<1){
             if((gb_ms)(in->now-s->lastModeEmit)>400){
-                s->lastModeEmit=in->now; s->modeCause=1; o.act=GB_MODE_KEY; return o;
+                s->lastModeEmit=in->now; s->modeCause=1;
+                s->modeWant=0; o.act=GB_MODE_KEY; o.wantAuto=0; return o;   /* manual, to engage */
             }
             return o;
         }
         if(in->mode==0){
             if(in->gear<1){ o.act=GB_UP; o.target=1; o.known=1; return o; }
             s->pendAuto=0; s->respectAuto=1; s->lastModeEmit=in->now; s->modeCause=1;
-            o.act=GB_MODE_KEY; return o;
+            s->modeWant=1; o.act=GB_MODE_KEY; o.wantAuto=1; return o;   /* a gear is in - automatic */
         }
         s->pendAuto=0;                                  /* automatic with a gear in - done */
     }
@@ -222,7 +304,7 @@ static GBOut GBStep(const GBCfg *c,GBState *s,const GBIn *in){
         if(s->respectAuto){ o.blockedAuto=1; return o; }
         if(c->dikMode>0&&!s->engaged){
             s->engaged=1; s->lastModeEmit=in->now; s->modeCause=2;
-            o.act=GB_MODE_KEY; return o;
+            s->modeWant=0; o.act=GB_MODE_KEY; o.wantAuto=0; return o;   /* a gear was asked: manual */
         }
         o.blockedAuto=1; return o;
     }

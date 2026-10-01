@@ -38,7 +38,20 @@ typedef struct {
     /* The control id of row 0 on this page, so a window can work out which row it is without the
        caller storing the row anywhere. */
     int  idBase;
+    /* WHICH MARKS A ROW HAS, or NULL for all of them - the default, and what every row had until
+       2026-09-30:
+         2 = the reference, the alt mark AND the round numbers (0, half, full travel): drawn and
+             magnetic, the percent rows;
+         1 = the reference and the alt mark only - for a row whose travel does not start at a
+             meaningful zero, where "half" would be an arbitrary number (no row uses it since the
+             steering weight was given a real zero and 0..400, 2026-09-30);
+         0 = the reference mark drawn, nothing magnetic - the breakaway runs 5..15 degrees, a
+             travel of ten, and the tolerance's floor of 2 is a fifth of it: with every mark
+             magnetic only 5, 9, 10 and 15 could be reached by dragging. */
+    int  (*marks)(int row);
 } slider_ops;
+
+static int SliderMarks(const slider_ops *o,int row){ return o->marks ? o->marks(row) : 2; }
 
 /* ONE BLOCK PER SLIDER, not one per program. It used to be a single global set at start-up, on the
  * reasoning that only one page is ever being interacted with - true of interaction, false of
@@ -76,12 +89,14 @@ static int SliderRowOf(HWND h){
 static int SliderMagnetise(const slider_ops *o,int row,int v){
     int span=o->travel(row), tol=span/33; if(tol<2) tol=2;
     int ref=o->ref?o->ref(row):100;
+    int marks=SliderMarks(o,row);
     /* The reference first, then the round numbers. A row with no reference (ref -1) simply has one
        fewer snap - it must not silently fall back to 100, which on a page of centimetres is a
        magnet at an arbitrary place. */
     int snaps[5]={ref,0,span/2,span,(o->alt?o->alt(row):-1)};
-    for(int i=0;i<5;i++){
+    for(int i=0;i<5&&marks>0;i++){
         int s=snaps[i];
+        if(marks<2&&i>=1&&i<=3) continue;     /* the round numbers belong to a full row only */
         if(s<0||s>span) continue;
         if(v>=s-tol&&v<=s+tol) return s;
     }
@@ -116,8 +131,11 @@ static void SliderPaint(HWND h,int row){
        slider dragged elsewhere would be a lie. The KNOB goes green instead, and only while it is
        actually sitting on 100. */
     int alt=o->alt?o->alt(row):-1;
+    int marks=SliderMarks(o,row);
     for(int i=0;i<5;i++){
         int v = (i==0?0 : i==1?max/2 : i==2?ref : i==3?max : alt);
+        /* 0, half and full are round numbers only on a row that starts at a real zero */
+        if(marks<2&&(i==0||i==1||i==3)) continue;
         if(v<0||v>max) continue;
         int x=x0+(x1-x0)*v/max;
         int isRef=(v==ref);

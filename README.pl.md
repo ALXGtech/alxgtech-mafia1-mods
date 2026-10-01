@@ -20,9 +20,10 @@ Dzięki temu Mafia wreszcie jeździ jak porządna gra symulacyjna!
 Trzy mody dla **Mafia: The City of Lost Heaven (2002)** - tej oryginalnej, pierwszej Mafii - w jednym małym programie.
 
 > **Zbudowane i przetestowane dla wydania GOG, v1.3 build 16073 - dowolna wersja językowa.** Wszystkie
-> osiem z nich zawiera identyczny `Game.exe`, więc pasuje dowolne. **Wydanie Steam oraz każda
-> inna wersja lub sklep nie były testowane, a zgodność z nimi nie jest gwarantowana.**
-> Program sprawdza twój `Game.exe` i informuje, jeśli to nie jest kompilacja, dla której to wszystko powstało.
+> osiem z nich zawiera identyczny `Game.exe`, więc pasuje dowolne. **Twoja wersja ze Steama też może
+> działać - nie była testowana, więc spróbuj.** Inne wersje i sklepy nie były testowane. Program
+> sprawdza twój `Game.exe` i informuje, jeśli to nie jest kompilacja, dla której to wszystko powstało,
+> a wszystko, co instaluje, można cofnąć.
 
 Za długie, żeby czytać? Oto wszystko w skrócie:
 
@@ -33,7 +34,7 @@ Za długie, żeby czytać? Oto wszystko w skrócie:
 5. Włącz w programie mody, które chcesz, i graj.
 
 **Potem je skonfiguruj - [to zajmie pięć minut](#-konfiguracja-każdego-moda).** Zwłaszcza Force
-Feedback, któremu trzeba podać zakres obrotu twojej kierownicy, zanim zacznie działać jak trzeba.
+Feedback - podaj mu zakres obrotu twojej kierownicy.
 
 | | mod | w tym wydaniu |
 |:--:|---|---|
@@ -45,6 +46,21 @@ Feedback, któremu trzeba podać zakres obrotu twojej kierownicy, zanim zacznie 
 Wszystko poniżej to szczegóły: co robi każdy mod, co zapisuje w folderze gry i jak to wszystko
 cofnąć.
 
+## ✨ Co nowego w wersji 2.0
+
+- **Nowy Force Feedback.** Ciężar kierownicy pochodzi teraz z przednich opon, a nie ze sprężyny
+  centrującej: kierownica robi się cięższa wraz z prędkością i staje się lekka, gdy przednie opony
+  tracą przyczepność. Faktura nawierzchni, na przykład bruk, ma własny suwak, a siła zderzeń zależy
+  od tego, jak szybko uderzasz.
+- **Większy zapas** - każdy suwak siły sięga do 400%, dla kierownic słabszych niż baza direct
+  drive, na której mod był strojony.
+- **Poprawka błędu, przez który skrzynia biegów sama przechodziła w tryb automatyczny.** Nie
+  potwierdzono jej jeszcze podczas długiej jazdy w trybie manualnym - jeśli nadal ci się to zdarza,
+  otwórz proszę issue.
+
+Aktualizujesz z wersji 1.4.3? Wyłącz mod Force Feedback i włącz go ponownie - raz, przy zamkniętej
+Mafii.
+
 ## Przed instalacją
 
 - **Zrób kopię zapasową zapisów.** Znajdują się w `<game>\savegame\`. Instalator zapisuje każdy
@@ -53,7 +69,8 @@ cofnąć.
 - **Wersja.** Zbudowane dla wydania GOG Mafii v1.3 (build 16073). Wszystkie osiem edycji
   językowych zawiera identyczny `Game.exe`, więc pasuje dowolna; testowane w grze na wersji
   angielskiej. Narzędzie sprawdza twój `Game.exe` i mówi, jeśli to nie jest kompilacja, na
-  której wszystko było mierzone. Każda inna wersja lub wydanie ze sklepu jest na własne ryzyko.
+  której wszystko było mierzone. Wersja ze Steama nie była testowana, ale może działać - spróbuj;
+  każda inna wersja lub wydanie ze sklepu jest na własne ryzyko.
 - **Inne mody.** Zgodność z innymi modami nie była testowana. Dołączony loader ASI wczyta
   również pozostałe twoje mody `.asi` - to zamierzone, ale nieprzetestowane terytorium.
 - **Antywirus.** `ALXGtech Mafia 1 Mods.exe` to niepodpisany plik wykonywalny, który zapisuje
@@ -65,9 +82,9 @@ cofnąć.
 Cztery mody w jednym oknie, każdy włączany i wyłączany na własnej zakładce. Trzy z nich działają
 już dziś; czwarty uczciwie mówi, że jeszcze nie.
 
-**🎮 Force Feedback.** Kompletny zestaw sił DirectInput8 sterowany na żywo stanem samochodu:
-centrowanie zależne od prędkości, tłumik na postoju, odciążenie przy utracie przyczepności,
-krawężniki, szyny tramwajowe, kołysanie przy zjeździe z drogi i uderzenia. Zbudowane pod
+**🎮 Force Feedback.** Kompletny model sił DirectInput8 sterowany na żywo stanem samochodu:
+ciężar kierownicy z przednich opon, rosnący wraz z prędkością, tłumik na postoju, odciążenie przy
+utracie przyczepności, krawężniki, faktura nawierzchni, kołysanie nadwozia i uderzenia. Zbudowane pod
 nowoczesne kierownice direct drive przez ludzi, którzy na nich jeżdżą, bo oryginał nie zachowuje
 się tak, jak kierownica powinna się zachowywać w 2026 roku. Gra w wersji oryginalnej po prostu
 szarpie kierownicą przy zderzeniu; tutaj zastępuje to pełny model sił. Ustawienia są odczytywane
@@ -125,25 +142,21 @@ a gra musi choć raz zobaczyć twoją kierownicę.
 
 ### 🎮 Force Feedback
 
-![Zakładka Force Feedback: wybór kierownicy, zakres obrotu, suwaki siły i kolumna wagi kierownicy](docs/img/tab-force-feedback.png)
+![Zakładka Force Feedback: kierownica i jej zakres obrotu u góry, suwaki w dwóch kolumnach poniżej](docs/img/tab-force-feedback.png)
 
 Wszystko na tej zakładce jest **na żywo** - dociera do gry w momencie, gdy przesuwasz suwak, bez
 restartu.
 
-1. **Najpierw podłącz kierownicę, potem otwórz zakładkę.** Jeśli widnieje informacja, że
-   kierownica nie jest podłączona, naciśnij **Refresh list** i wybierz swoją kierownicę z listy.
-   **Test - push the wheel** potwierdza, że mod się z nią komunikuje.
-2. **Naciśnij `ON: recommended in-game FFB settings`.** Zapisuje to do twojego profilu Mafii
-   własne wartości prowadzenia i siłowego sprzężenia zwrotnego gry, względem których ten mod był
-   strojony. Pomiń ten krok, a będziesz kręcić suwakami względem innego punktu odniesienia niż
-   ten, z którego wychodzi każda liczba na tej stronie.
+1. **Najpierw podłącz kierownicę, potem otwórz zakładkę.** Zakładka wybiera pierwszą znalezioną
+   kierownicę z force feedback; jeśli masz ich kilka, wybierz swoją z listy rozwijanej, a jeśli jej
+   brakuje, naciśnij **Refresh list**. **Test - push the wheel** daje jej krótkie pchnięcie z
+   narzędzia - używaj go przy zamkniętej Mafii.
+2. **Własne ustawienia force feedback gry są ustawiane za ciebie.** Włączenie moda zapisuje do
+   twojego profilu Mafii wartości, względem których był strojony, a przycisk ma wtedy napis
+   `ON: recommended in-game FFB settings`. Naciśnij go, żeby oddać profilowi dokładnie to, co miał.
 3. **Ustaw `WHEEL ROTATION RANGE` dokładnie na to, na co ustawiony jest sterownik twojej
-   kierownicy.** To jedyne ustawienie, którego nie wolno zgadywać. Na samej kierownicy nic nie
-   zmienia - mówi modowi, co ma jej podawać. Wszystko było strojone przy **600 stopniach**, i
-   jeśli zakres możesz wybrać dowolnie, 600 to zalecenie. Do wyboru jest osiem wartości - 90,
-   360, 540, 600, 720, 900, 1080 i 1440 - a zakładka uczciwie mówi, która jest którą: część była
-   faktycznie przejechana i potwierdzona, reszta jest wyliczona wzorem i nigdy nie była
-   przejechana. Napisano to pod selektorem.
+   kierownicy.** Na samej kierownicy nic nie zmienia - mówi modowi, co ma jej podawać.
+   **600 to wartość domyślna i zalecana**: wszystko było strojone właśnie przy niej.
 
 ![Baza Simagic, względem której wszystko na tej stronie było strojone: Alpha EVO 12 N.m przy 55 procentach, 600 stopni obrotu, efekty mechaniczne niemal wyłączone](docs/img/wheel-settings-reference.png)
 
@@ -154,51 +167,44 @@ powyżej - i własne efekty mechaniczne sterownika pozostawione niemal wyłączo
 ciężar dodaje sam mod. Nie trzeba tego kopiować i mod tego nigdy nie odczytuje; jest to tutaj po
 to, żeby za zdaniem "strojone przy 600 stopniach" stał obraz.
 
-Potem suwaki. **100% to odczucie fabryczne moda**, a wysokie oznaczenie na każdym suwaku to
-wartość zalecana - 100 wszędzie, oprócz **Gunfire, które wynosi 0**. Powody są dwa, i na tej
-kompilacji drugi ma większe znaczenie. Ustawiono zero, ponieważ efekt uruchamia się przy każdym
-strzale - twoim, sojuszników i przeciwników - a wstrząs, którego sam nie spowodowałeś, odczuwa
-się jak usterka kierownicy. A na wydaniu GOG kanał i tak nie ma na co reagować: odczytuje
-licznik, który przez cały przejazd się nie rusza - zmierzone - i to ten sam powód, przez który
-trafienia pociskami w ogóle nie są odczuwalne. Własny opis na zakładce opisuje efekt, a nie tę
-sytuację, więc suwak jest o wiele bardziej uśpiony, niż się wydaje.
+Potem suwaki. **100% - wysokie oznaczenie - to odczucie fabryczne moda**, a każdy suwak siły sięga
+do **400%**, dla słabszej bazy. `Total effects (not affecting dampers)` na górze skaluje wszystkie
+siły naraz. Lewa kolumna ustala, jak mocny jest każdy efekt; prawa - jak ciężka i jak mocno
+tłumiona jest kierownica.
 
-| grupa | co to jest |
+| suwak | co to jest |
 |---|---|
-| Overall strength | mniej wszystkiego naraz, jednym regulatorem |
-| Crashes and rams | wartość odniesienia; 100 to tu sufit |
-| Hitting objects | skrzynki, kosze, budki, hydranty |
-| Pedestrians | dokładnie to, co napisano |
-| Road surface | krawężniki, szyny tramwajowe, teren poza drogą |
-| Slide feel | efekt kąta poślizgu |
-| `Centering spring`, `Parking damper`, `Driving damper` | kolumna wagi kierownicy: jak ciężka jest w spoczynku i w ruchu |
+| Crashes and rams, Hitting objects, Pedestrians | uderzenia - obiekty to skrzynki, kosze i hydranty |
+| Gunfire | zalecane 0 - patrz niżej |
+| Roll and curbs | kołysanie nadwozia na krawężnikach |
+| Road texture | bruk i drobna ziarnistość |
+| Steering weight | jak ciężka jest kierownica |
+| Build-up with speed | `Light`, `Reference` lub `Heavy` - jak ciężar rośnie wraz z prędkością |
+| Breakaway | gdzie kończy się przyczepność - domyślnie 9 stopni poślizgu |
+| Parking damper, Driving damper | kierownica w spoczynku i w ruchu |
+| Lightness in a slide | jaka część tłumika znika w pełnym poślizgu - domyślnie 78% |
 
-Ciężarówki mają własną parę tłumików, która mnoży wartości samochodów osobowych. Są to wartości
-arytmetyczne i nikt na nich nie jeździł, o czym zakładka mówi wprost. **Back to default settings**
-przywraca wszystkie suwaki do 100%.
+**Gunfire jest ustawione na 0 celowo.** Efekt uruchamia się przy każdym strzale z twojego samochodu,
+nie tylko twoim, a wstrząs, którego sam nie spowodowałeś, odczuwa się jak usterka kierownicy. Na
+wydaniu GOG kanał i tak nie ma na co reagować: odczytuje licznik, który tam nigdy się nie rusza, i
+to ten sam powód, przez który trafienia pociskami w ogóle nie są odczuwalne.
 
-**Presety 1, 2, 3.** Ten, który świeci na zielono, jest edytowany, i to do niego trafiają
-wszystkie wartości ze strony. `Import preset...` i `Export preset...` przenoszą je między
-komputerami.
+**Back to default settings** przywraca każdy suwak do jego wysokiego oznaczenia, a Gunfire do 0.
+**Presety 1, 2, 3**: edytowany jest ten, który świeci na zielono; `Import preset...` i
+`Export preset...` przenoszą je między komputerami.
 
-**Jeśli do kierownicy nic nie dociera, zakładka sama mówi, o którą z trzech przyczyn chodzi.**
-Na dole jest lampka i linia tekstu, i to pierwsza rzecz, na którą warto spojrzeć, zanim ruszy się
-jakikolwiek suwak:
+**Jeśli do kierownicy nic nie dociera, lampka na górze zakładki mówi, dlaczego** - spójrz tam
+najpierw:
 
 | lampka mówi | co to znaczy |
 |---|---|
-| efekty jazdy są włączone i podaje nazwę twojej kierownicy | wszystko działa |
-| gra nie jest uruchomiona i podaje nazwę kierownicy, którą widziała ostatnio | z modem wszystko w porządku, po prostu Mafia nie jest otwarta |
-| do kierownicy nie dociera żadna siła | mod jest wczytany, ale coś to blokuje - sprawdź, czy kierownica jest podłączona i wybrana |
+| `Driving effects on` i nazwa twojej kierownicy | wszystko działa |
+| `Game not running - last seen on` i nazwa twojej kierownicy | z modem wszystko w porządku, po prostu Mafia nie jest otwarta |
+| `Not run here yet` | włącz mod i raz uruchom Mafię |
+| `No force is reaching the wheel` | coś to blokuje - sprawdź, czy kierownica jest podłączona i wybrana |
 
-To samo miejsce informuje, gdy mod trzyma ostatecznie **inną kierownicę niż wybrana** - dzieje
-się tak, gdy wybrana kierownica była odłączona w chwili uruchomienia gry. Nazywa obie, więc
-milcząca kierownica nie pozostaje zagadką.
-
-**`ON: recommended in-game FFB settings` jest odwracalne, osobno dla każdego profilu zapisu.**
-Ponowne naciśnięcie przywraca dokładnie to, co było wcześniej w tym profilu - nie jakieś
-fabryczne ustawienia domyślne - a wszystko, co zmieniłeś w międzyczasie samodzielnie, pozostaje
-bez zmian.
+Jeśli mod ostatecznie trzyma **inną kierownicę niż wybrana** - bo wybrana była odłączona w chwili
+uruchomienia gry - wiersz kierownicy pokazuje `NOT your choice` i podaje nazwę tej, którą mod wziął.
 
 ### 🕹️ H-shifter
 
@@ -242,8 +248,8 @@ Również na żywo - **z wyjątkiem `Field of view`**, czyli jedynego wiersza na
   fotel, z jakim mod jest dostarczany. **Back to the default seat** wraca do niego.
 - **`Field of view`** wynosi 86, co pasuje do ekranu 16:9; gra dostarcza 70. Ten parametr łata
   `Game.exe`, a wyłączenie moda zapisuje z powrotem oryginalne bajty.
-- **Horyzont**: `Locks to horizon` to zalecane ustawienie i to, z którym jeżdżono. `Rolls with
-  the car` jest bliższe prawdziwej głowie i trudniejsze do oglądania.
+- **Horyzont**: `Locks to horizon` to zalecane ustawienie i to, z którym jeżdżono.
+  `Rolls with the car` jest bliższe prawdziwej głowie i trudniejsze do oglądania.
 - **Klawisze do regulacji kamery podczas jazdy** są opcjonalne i w tej wersji działają
   **wyłącznie z klawiatury. Przyciski kierownicy nie są tu obsługiwane.** Sześć klawiszy fotela,
   domyślnie F1-F6, można przypisać ponownie na tej zakładce. Pary bliskiej płaszczyzny `F9 / F10`
@@ -311,7 +317,7 @@ przypisania są odczytywane przy starcie gry. Obie mówią o tym na ekranie.
 | GOG v1.3 build 16073, angielska | testowane, na tej kompilacji wszystko było mierzone |
 | GOG v1.3, rosyjska | zainstalowane i uruchomione na czystej instalacji: `Game.exe` bajtowo identyczny, wszystkie trzy mody się wczytały |
 | GOG v1.3, pozostałe sześć języków | identyczny `Game.exe`, więc powinno działać, ale nie testowano w grze |
-| Steam i inne wydania | nietestowane. Program powie, że nie rozpoznaje kompilacji |
+| Steam i inne wydania | nietestowane - Steam może działać, spróbuj. Program powie, jeśli nie rozpozna kompilacji |
 | inne mody | nietestowane |
 
 W folderze gry może żyć tylko jeden `dinput8.dll`. Jeśli masz tam już loader ASI, istniejący
@@ -319,6 +325,9 @@ jest zapisywany w kopii zapasowej przed zastąpieniem i przywracany przy odinsta
 
 ## Znane problemy
 
+- Przy prędkościach wyścigowych kierownica może czasem dostać wstrząs o pełnej sile, jak przy
+  zderzeniu - na otwartej prostej, gdzie nie ma w co uderzyć. W tym wydaniu nie jest to naprawione.
+- Force Feedback był strojony na bazie direct drive; inne kierownice nie były testowane.
 - Uderzenie od tyłu jest ledwo odczuwalne. To zmierzone, a nie zgadnięte: żaden nasz kanał
   jeszcze tego nie wykrywa, a poluzowanie progu uderzenia przywraca fałszywe kopnięcia, które
   były gorsze. To znany błąd i w tym wydaniu nie jest naprawiony.
@@ -348,11 +357,16 @@ Pull requesty i forki są mile widziane, w tym przeniesienie tej techniki do inn
 - [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader) od ThirteenAG,
   dołączony jako `dinput8.dll`. Zobacz `THIRD-PARTY.md`. To jedyny kod firm trzecich, który jest
   tu dostarczany.
+- **[GTAV Manual Transmission](https://github.com/ikt32/GTAVManualTransmission)** od ikt32. **Model
+  Force Feedback częściowo korzysta z jego logiki**: ciężar kierownicy wyliczany z kąta poślizgu i
+  obciążenia przednich opon, wygaszany, gdy opona buksuje lub się blokuje, bez sprężyny centrującej -
+  oraz z części jego wartości domyślnych. Zbudowano go tu od nowa na własnych danych Mafii i nie
+  skopiowano żadnego kodu tego projektu.
 - Wszystko inne to własna praca tego projektu.
 
 ### Inspiracje - obejrzane, przemyślane, niewykorzystane
 
-Trzy poniższe projekty rozwiązywały problemy, które ma też ten mod, a zobaczenie, że da się je
+Dwa poniższe projekty rozwiązywały problemy, które ma też ten mod, a zobaczenie, że da się je
 rozwiązać, było warte bardzo dużo. **Żaden ich kod nie znajduje się w tym repozytorium ani w
 niczym, co ono dostarcza.** Każdy z nich został przeczytany jako punkt odniesienia dla tego, co
 jest możliwe, a implementacja tutaj powstała niezależnie i wyszła inna. Są wymienieni, bo na to
@@ -361,10 +375,6 @@ zasługują, a nie dlatego, że coś od nich zostało wzięte.
 - **[WidescreenFixesPack - Mafia](https://github.com/ThirteenAG/WidescreenFixesPack/releases/tag/mafia)**
   od ThirteenAG. Punkt odniesienia dla problemu interfejsu na szeroki ekran. Nasza poprawka to
   inne podejście i nie dzieli z nim żadnego kodu.
-- **[GTAV Manual Transmission](https://github.com/ikt32/GTAVManualTransmission)** od ikt32. Inna
-  gra i inny silnik, a przeczytaliśmy go dla jego **fizyki pojazdu** - zwłaszcza tego, jak
-  obsługuje kąty poślizgu. Nasz Force Feedback wylicza je po swojemu, z własnego stanu
-  samochodu w Mafii, i nie dzieli z nim żadnego kodu.
 - **[Mafia First Person Shooter Mod](https://www.moddb.com/mods/first-person-camera/downloads/mafia-first-person-shooter-mod)**.
   Punkt odniesienia na to, że widok pierwszoosobowy w tej grze jest w ogóle osiągalny. Nasz jest
   zrobiony całkowicie inaczej i nie dzieli z nim żadnego kodu.

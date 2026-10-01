@@ -19,9 +19,10 @@ Mafia tak konečně jezdí jako pořádná simulace!
 Tři módy pro **Mafia: The City of Lost Heaven (2002)** - tu původní, první Mafii - v jednom malém programu.
 
 > **Vytvořeno a otestováno pro vydání GOG, v1.3 build 16073 - jakákoli jazyková verze.** Všech osm
-> jich obsahuje shodný `Game.exe`, takže poslouží kterákoli. **Vydání na Steamu ani žádná jiná
-> verze či obchod testovány nebyly a kompatibilita s nimi není zaručena.** Program zkontroluje váš
-> `Game.exe` a upozorní, pokud nejde o sestavení, pro které bylo vše vytvořeno.
+> jich obsahuje shodný `Game.exe`, takže poslouží kterákoli. **Vaše verze ze Steamu může fungovat
+> také - testována nebyla, tak to zkuste.** Ostatní verze a obchody testovány nebyly. Program
+> zkontroluje váš `Game.exe` a upozorní, pokud nejde o sestavení, pro které bylo vše vytvořeno, a vše,
+> co nainstaluje, lze vrátit zpět.
 
 Příliš dlouhé na čtení? To je všechno:
 
@@ -32,7 +33,7 @@ Příliš dlouhé na čtení? To je všechno:
 5. V programu zapněte módy, které chcete, a hrajte.
 
 **Pak je nastavte - [je to na pět minut](#-nastavení-každého-módu).** Hlavně silovou zpětnou
-vazbu: musíte jí říct rozsah otáčení vašeho volantu, jinak nebude působit správně.
+vazbu - řekněte jí rozsah otáčení vašeho volantu.
 
 | | mód | v tomto vydání |
 |:--:|---|---|
@@ -44,6 +45,19 @@ vazbu: musíte jí říct rozsah otáčení vašeho volantu, jinak nebude působ
 Vše níže jsou podrobnosti: co jednotlivé módy dělají, co zapisují do složky hry a jak je vrátit
 zpět.
 
+## ✨ Co je nového ve verzi 2.0
+
+- **Nová silová zpětná vazba.** Váha řízení se teď odvozuje od předních pneumatik místo
+  centrovací pružiny: volant s rychlostí těžkne a lehkne, když přední pneumatiky ztratí
+  přilnavost. Struktura vozovky, například dlažební kostky, má vlastní posuvník a síla nárazů se
+  řídí tím, jak rychle narazíte.
+- **Větší rezerva** - každý silový posuvník jde až na 400%, pro volanty slabší, než je direct
+  drive základna, na které byl mód laděn.
+- **Oprava převodovky, která se sama přepínala do automatu.** Zatím nepotvrzeno na dlouhé jízdě
+  v manuálním režimu - pokud se vám to stále děje, otevřete prosím issue.
+
+Aktualizujete z verze 1.4.3? Mód Force Feedback jednou vypněte a znovu zapněte, při zavřené Mafii.
+
 ## Než začnete instalovat
 
 - **Zazálohujte si uložené pozice.** Jsou v `<game>\savegame\`. Instalátor zaznamenává každý
@@ -51,8 +65,9 @@ zpět.
   kontrolou.
 - **Verze.** Postaveno pro GOG vydání Mafia v1.3 (build 16073). Všech osm jazykových vydání má
   identický `Game.exe`, takže poslouží kterékoli; hrálo se s anglickým. Nástroj váš `Game.exe`
-  ověří a řekne, pokud to není sestavení, na kterém bylo vše měřeno. Jakákoli jiná verze nebo
-  vydání z jiného obchodu je na vlastní riziko.
+  ověří a řekne, pokud to není sestavení, na kterém bylo vše měřeno. Verze ze Steamu testována
+  nebyla, ale může fungovat - zkuste to; jakákoli jiná verze nebo vydání z jiného obchodu je na
+  vlastní riziko.
 - **Ostatní módy.** Kompatibilita s jinými módy nebyla testována. Přibalený ASI loader načte i
   vaše ostatní `.asi` módy, což je záměr, ale neověřený.
 - **Antivirus.** `ALXGtech Mafia 1 Mods.exe` je nepodepsaný spustitelný soubor, který zapisuje do
@@ -64,9 +79,10 @@ zpět.
 Čtyři módy v jednom okně, každý se zapíná a vypíná na vlastní záložce. Tři fungují už dnes;
 čtvrtý poctivě říká, že zatím ne.
 
-**🎮 Silová zpětná vazba.** Kompletní sada sil DirectInput8 řízená živým stavem vozu: dostředivá
-síla podle rychlosti, tlumič při stání, odlehčení při ztrátě přilnavosti, obrubníky, tramvajové
-koleje, houpání mimo silnici a nárazy. Je stavěná pro dnešní direct drive volanty lidmi, kteří
+**🎮 Silová zpětná vazba.** Kompletní model sil DirectInput8 řízený živým stavem vozu: váha řízení
+od předních pneumatik, která s rychlostí roste, tlumič při stání, odlehčení při ztrátě přilnavosti,
+obrubníky, struktura vozovky, houpání karoserie a nárazy. Je stavěná pro dnešní direct drive
+volanty lidmi, kteří
 na nich jezdí, protože originál se nechová tak, jak by se volant v roce 2026 chovat měl.
 Původní hra volantem při srážce skutečně trhne; tohle to nahrazuje plným modelem sil. Nastavení
 se načítá za běhu, takže změna na záložce Force Feedback je cítit v další zatáčce, ne až po
@@ -120,24 +136,22 @@ musí váš volant alespoň jednou vidět.
 
 ### 🎮 Silová zpětná vazba
 
-![Záložka Force Feedback: výběr volantu, rozsah otáčení, posuvníky síly a sloupec s váhou volantu](docs/img/tab-force-feedback.png)
+![Záložka Force Feedback: nahoře volant a jeho rozsah otáčení, pod nimi posuvníky ve dvou sloupcích](docs/img/tab-force-feedback.png)
 
 Vše na této záložce je **živé** - projeví se ve hře ve chvíli, kdy posuvníkem pohnete, bez
 restartu.
 
-1. **Nejdřív připojte volant, teprve pak otevřete záložku.** Pokud je napsáno, že volant není
-   připojen, stiskněte **Refresh list** a vyberte svůj volant ze seznamu.
-   **Test - push the wheel** potvrdí, že s ním mód mluví.
-2. **Stiskněte `ON: recommended in-game FFB settings`.** Zapíše to do vašeho profilu Mafie ty
-   vlastní hodnoty jízdního modelu a silové zpětné vazby hry, proti kterým byl tento mód laděn.
-   Když to vynecháte, ladíte proti jinému výchozímu bodu, než ze kterého vychází každé číslo na
-   této stránce.
-3. **Nastavte `WHEEL ROTATION RANGE` přesně na to, na co je nastaven ovladač vašeho volantu.** To
-   je jediné nastavení, které se nesmí hádat. Na volantu samotném nic nemění - říká módu, co má
-   posílat. Vše bylo laděno na **600 stupních**, a pokud si rozsah volíte sami, 600 je doporučení.
-   Nabízí se osm hodnot - 90, 360, 540, 600, 720, 900, 1080 a 1440 - a záložka poctivě uvádí,
-   která je která: některé byly skutečně odjety a ověřeny, zbytek je odvozen vzorcem a nikdy
-   odjet nebyl. Píše se to pod výběrem.
+1. **Nejdřív připojte volant, teprve pak otevřete záložku.** Záložka vybere první volant se silovou
+   zpětnou vazbou, který najde; pokud jich máte víc, vyberte ten svůj ze seznamu a pokud ve výběru
+   chybí, stiskněte **Refresh list**. **Test - push the wheel** mu z utility dá krátký impuls -
+   spouštějte ho při zavřené Mafii.
+2. **Nastavení silové zpětné vazby samotné hry se nastaví za vás.** Zapnutí módu zapíše do vašeho
+   profilu Mafie hodnoty, proti kterým byl mód laděn, a tlačítko pak má nápis
+   `ON: recommended in-game FFB settings`. Jeho stisknutím do profilu vrátíte přesně to, co v něm
+   bylo předtím.
+3. **Nastavte `WHEEL ROTATION RANGE` přesně na to, na co je nastaven ovladač vašeho volantu.** Na
+   volantu samotném nic nemění - říká módu, co má posílat. **600 je výchozí hodnota i doporučení**:
+   vše bylo laděno právě na ní.
 
 ![Základna Simagic, na kterou bylo vyladěno vše na této stránce: Alpha EVO 12 N.m na 55 %, 600 stupňů otáčení, mechanické efekty téměř vypnuté](docs/img/wheel-settings-reference.png)
 
@@ -148,48 +162,44 @@ vlastní mechanické efekty ovladače ponechané téměř vypnuté, protože tlu
 Nemusíte to kopírovat a mod to nikdy nečte; je to tu proto, aby za větou „vyladěno na 600 stupních“
 stála i fotka.
 
-Pak posuvníky. **100 % je pocit, se kterým se mód dodává**, a vysoká značka na každém posuvníku je
-doporučená hodnota: 100 všude kromě **Gunfire, které je 0**. Důvody jsou dva a na tomto sestavení
-víc záleží na tom druhém. Na nulu je nastaven proto, že se efekt spouští při každém výstřelu z
-vašeho auta, spojenců i nepřátel, a otřes, který jste nezpůsobili, působí jako porucha volantu. A
-na GOG vydání navíc posuvník nemá na co reagovat: kanál čte počítadlo, které se za celou jízdu ani
-nehne - ověřeno - a to je stejný důvod, proč zásahy do vás vůbec nejsou cítit. Popisek k posuvníku
-na záložce popisuje ten efekt, ne tuhle situaci, takže je posuvník mnohem tišší, než vypadá.
+Pak posuvníky. **100% - vysoká značka - je pocit, se kterým se mód dodává**, a každý silový
+posuvník jde až na **400%** pro slabší základnu volantu. `Total effects (not affecting dampers)`
+nahoře škáluje všechny síly najednou. Levý sloupec nastavuje, jak silný je každý efekt; pravý, jak
+těžký a jak tlumený volant je.
 
-| skupina | co to je |
+| posuvník | co to je |
 |---|---|
-| Overall strength | méně všeho najednou, jedním ovladačem |
-| Crashes and rams | referenční hodnota; 100 je tady strop |
-| Hitting objects | bedny, popelnice, stánky, hydranty |
-| Pedestrians | přesně to, co je napsáno |
-| Road surface | obrubníky, tramvajové koleje, mimo silnici |
-| Slide feel | efekt úhlu skluzu |
-| `Centering spring`, `Parking damper`, `Driving damper` | sloupec s váhou volantu: jak těžký volant je v klidu i za jízdy |
+| Crashes and rams, Hitting objects, Pedestrians | nárazy - předměty jsou bedny, popelnice a hydranty |
+| Gunfire | doporučeno 0 - viz níže |
+| Roll and curbs | houpání karoserie na obrubnících |
+| Road texture | dlažební kostky a jemná zrnitost |
+| Steering weight | jak těžký je volant |
+| Build-up with speed | `Light`, `Reference` nebo `Heavy` - jak váha roste s rychlostí |
+| Breakaway | kde se ztrácí přilnavost - ve výchozím stavu 9 stupňů skluzu |
+| Parking damper, Driving damper | volant v klidu a za jízdy |
+| Lightness in a slide | kolik tlumení zmizí při plném smyku - ve výchozím stavu 78% |
 
-Nákladní vozy mají vlastní dvojici tlumičů, která násobí hodnoty osobních aut. Jsou aritmetické a
-nikdo s nimi nejel, což záložka říká nahlas. **Back to default settings** vrátí všechny posuvníky
-na 100 %.
+**Gunfire je záměrně na 0.** Efekt se spouští při každém výstřelu z vašeho auta, nejen při vašem
+vlastním, a otřes, který jste nezpůsobili, působí jako porucha volantu. Na GOG vydání navíc kanál
+nemá na co reagovat: čte počítadlo, které se tam nikdy nehne, a to je stejný důvod, proč zásahy do
+vás vůbec nejsou cítit.
 
-**Předvolby 1, 2, 3.** Ta, která svítí zeleně, se upravuje, a jdou do ní všechny hodnoty ze
-stránky. `Import preset...` a `Export preset...` je přenášejí mezi počítači.
+**Back to default settings** vrátí každý posuvník na jeho vysokou značku, Gunfire na 0. **Předvolby
+1, 2, 3**: ta, která svítí zeleně, se upravuje; `Import preset...` a `Export preset...` je
+přenášejí mezi počítači.
 
-**Pokud se k volantu nic nedostává, záložka sama řekne, o kterou ze tří příčin jde.** Dole je
-kontrolka a řádek textu, a to je první věc, na kterou se podívat dřív, než sáhnete na jakýkoli
-posuvník:
+**Pokud se k volantu nic nedostává, kontrolka nahoře na záložce řekne proč** - podívejte se nejdřív
+tam:
 
 | kontrolka říká | co to znamená |
 |---|---|
-| jízdní efekty jsou zapnuté a jmenuje váš volant | funguje to |
-| hra neběží a jmenuje volant, který viděla naposledy | mód je v pořádku, jen Mafia není spuštěná |
-| k volantu se nedostává žádná síla | mód je načtený a něco mu brání - zkontrolujte, že je volant zapojený a vybraný |
+| `Driving effects on` váš volant | funguje to |
+| `Game not running - last seen on` váš volant | mód je v pořádku, jen Mafia není spuštěná |
+| `Not run here yet` | zapněte mód a jednou spusťte Mafii |
+| `No force is reaching the wheel` | něco jí brání - zkontrolujte, že je volant zapojený a vybraný |
 
-Totéž místo to napíše, když mód nakonec drží **jiný volant, než jaký jste vybrali** - to se stane,
-když byl vybraný volant v okamžiku spuštění hry odpojený. Jmenuje oba, takže zmlknutý volant není
-záhadou.
-
-**`ON: recommended in-game FFB settings` je vratné, zvlášť pro každý herní profil.** Opětovné
-stisknutí vrátí přesně to, co v tom profilu bylo předtím, ne nějaké tovární výchozí nastavení.
-Cokoli jste si mezitím upravili sami, zůstává beze změny.
+Pokud mód nakonec drží **jiný volant, než jaký jste vybrali** - protože vybraný byl v okamžiku
+spuštění hry odpojený - řádek volantu hlásí `NOT your choice` a jmenuje ten, který použil.
 
 ### 🕹️ H-řadička
 
@@ -300,7 +310,7 @@ uvádějí.
 | GOG v1.3 build 16073, anglicky | testováno, na tomto sestavení bylo vše měřeno |
 | GOG v1.3, ruská verze | nainstalováno a spuštěno na čisté instalaci: bajtově shodný `Game.exe`, všechny tři módy se načetly |
 | GOG v1.3, ostatních šest jazyků | identický `Game.exe`, takže se očekává funkčnost, ve hře netestováno |
-| Steam a další vydání | netestováno. Nástroj řekne, že sestavení nepoznává |
+| Steam a další vydání | netestováno - Steam může fungovat, zkuste to. Nástroj řekne, pokud sestavení nepozná |
 | ostatní módy | netestováno |
 
 Ve složce hry může být jen jeden `dinput8.dll`. Pokud tam už ASI loader máte, ten stávající se
@@ -308,6 +318,9 @@ před nahrazením zazálohuje a při odinstalaci vrátí.
 
 ## Známé problémy
 
+- Při závodních rychlostech může volant občas dostat nárazový ráz plné síly na volné rovince, kde
+  není do čeho narazit. V tomto vydání opraveno není.
+- Silová zpětná vazba byla laděna na direct drive základně; jiné volanty nebyly testovány.
 - Náraz zezadu je cítit jen stěží. Je to změřené, ne odhadnuté: žádný z našich kanálů jej zatím
   nevidí a povolení prahu nárazu vrací falešné rázy, které byly horší. Je to známá chyba a v
   tomto vydání opravena není.
@@ -336,11 +349,16 @@ Pull requesty a forky jsou vítány, včetně přenesení postupu na úplně jin
 - [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader) od ThirteenAG,
   přibalen jako `dinput8.dll`. Viz `THIRD-PARTY.md`. Toto je jediný kód třetí strany, který je
   součástí toho, co se odsud instaluje.
+- **[GTAV Manual Transmission](https://github.com/ikt32/GTAVManualTransmission)** od ikt32. **Model
+  silové zpětné vazby částečně využívá jeho logiku**: váhu řízení z úhlu skluzu a zatížení
+  předních pneumatik, zeslabovanou, když se pneumatika protáčí nebo zablokuje, bez centrovací
+  pružiny - a některé jeho výchozí hodnoty. Zde to bylo postaveno znovu na vlastních datech Mafie
+  a žádný jeho kód nebyl zkopírován.
 - Vše ostatní je vlastní práce tohoto projektu.
 
 ### Inspirace - na co jsme se dívali, z čeho se učili, co jsme nepoužili
 
-Následující tři projekty řešily problémy, které má i tento mód, a už jen vidět, že jdou vyřešit,
+Následující dva projekty řešily problémy, které má i tento mód, a už jen vidět, že jdou vyřešit,
 mělo velkou hodnotu. **Žádný jejich kód není v tomto repozitáři ani v ničem, co se z něj
 instaluje.** Každý byl přečten jako reference toho, co je možné, a implementace zde vznikla
 nezávisle a vyšla jinak. Jsou jmenováni proto, že si to zaslouží, ne proto, že by z nich něco
@@ -349,10 +367,6 @@ bylo převzato.
 - **[WidescreenFixesPack - Mafia](https://github.com/ThirteenAG/WidescreenFixesPack/releases/tag/mafia)**
   od ThirteenAG. Reference pro problém širokoúhlého rozhraní. Naše oprava je jiný přístup a
   nesdílí s ním žádný kód.
-- **[GTAV Manual Transmission](https://github.com/ikt32/GTAVManualTransmission)** od ikt32. Jiná
-  hra a jiný engine, a četli jsme ho kvůli jeho **fyzice vozidla** - konkrétně tomu, jak řeší úhly
-  smyku. Naše silová zpětná vazba si je počítá po svém, z vlastního stavu auta v Mafii, a nesdílí
-  s ním žádný kód.
 - **[Mafia First Person Shooter Mod](https://www.moddb.com/mods/first-person-camera/downloads/mafia-first-person-shooter-mod)**.
   Reference toho, že pohled z první osoby je v této hře vůbec dosažitelný. Naše řešení je
   uděláno úplně jinak a nesdílí s ním žádný kód.

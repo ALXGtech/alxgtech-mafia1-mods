@@ -344,6 +344,55 @@ static DWORD s_impPendT   = 0;
 static float s_impPendDv  = 0.0f;
 static float s_impPendSpd = 0.0f;
 static float s_impPendAlong = 0.0f;
+static int   s_impPendCount = 0;    /* the ring position the candidate was seen at */
+
+/* ---- v7.88: THE WITNESS STOPS READING THE FIELD IT WAS MEANT TO POLICE -----------------------
+   The veto above was added in v7.67 as an INDEPENDENT second opinion, and it is not independent:
+   it reads `car+0x2A0C`, the field whose tearing is the whole root-cause story. Measured on drive
+   ours-021, a steady 23 m/s reads as 11.4 and 42.6 inside four ticks, which is six times the
+   2.22 m/s this asks for - so the veto does not refuse a phantom, it CONFIRMS one. All 53 kicks
+   of that drive came out through it, 51 of them with no live contact anywhere near.
+
+   The cure is to measure the consequence the same way the trigger measures the cause: from
+   POSITION, which the engine integrates and a torn read cannot move. A crash changes the speed
+   and the change STAYS; a tear is gone by the next tick.
+
+       vBefore = the 8-tick window ending at the candidate
+       vAfter  = the 8-tick window ending IMP_CONFIRM2_MS later
+       fire only if |vAfter - vBefore| >= impulse_dv_min
+
+   4.0 m/s across 200 ms is 2 g. No braking in this engine reaches it; a pole passes it easily.
+   `impulse_witness = 0` restores the v7.67 speedometer veto for an A/B. */
+#define IMP_CONFIRM2_MS  300u
+#define IMP_WIT_SPAN       8     /* UPDATES per speed window, about 130-250 ms in practice */
+/* ---- v7.89 THE RING IS THE GAME'S CLOCK, NOT OURS -------------------------------------------
+   Drive ours-022 refuted v7.88 in 40 seconds: 11 kicks got through the new witness and 10 of them
+   had no real speed change behind them. The reason is not the witness's idea, it is its sampling.
+   Measured on that drive, 21.8% of our 15.6 ms polls see a BIT-IDENTICAL position and the next
+   poll then carries two updates' worth of travel - per-tick speed reads `29 0 31 30 57 0 31`
+   where the truth is a steady 30. Our poll beats against the game's own update.
+   One missed step at the edge of a 128 ms window is about half a metre, i.e. 3.9 m/s at 30 m/s -
+   and the witness's threshold is 4.0. It was noisy by exactly its own bar.
+   So a sample is now written only when the position ACTUALLY MOVED, carrying the wall time
+   accumulated since the previous one. Both endpoints of every window are then real updates and
+   the time base is the real interval between them. The trigger reads the same ring and gets the
+   same benefit; offline over five drives this takes the phantoms from 174 to 62 while the real
+   impacts reported rise from 30 to 69. */
+#define IMP_RING        64
+#define IMP_RMASK       (IMP_RING - 1)
+static LONG  g_impWitness  = 1;
+static LONG  g_impDvMin    = 400;   /* m/s x100 */
+static LONG  g_impConfirm2 = (LONG)IMP_CONFIRM2_MS;
+/* The in-game A/B for this channel, the same shape as the ground channel's I and O: two keys
+   that ASSERT a state rather than one that toggles, each answering in the wheel, because he is
+   driving and cannot look at anything. K and L are free - the letter mark bank was retired in
+   v7.65 and neither code appears anywhere else in this file. */
+static LONG  g_impKeyOn  = 0x4B;    /* K */
+static LONG  g_impKeyOff = 0x4C;    /* L */
+static LONG  g_impOverride = -1;    /* -1 = the ini decides; 0/1 = he decided, mid-drive */
+
+/* The two functions that decide it live next to Sqrtf, which they need - search for
+   ImpRingSpeed. They are pure so a host can exercise them with no game and no wheel. */
 
 /* ---- v7.66: the manifold tap stops waiting, and asks the impulse instead ----
    `PED_MIN_CONTACTS = 2` made the tap fire on the SECOND growth of the contact manifold, which
@@ -1413,16 +1462,20 @@ static volatile LONG g_axOk     = 0;   /* 0 = last GetDeviceState failed (alt-ta
    that 1440 is. Neither has been driven either, and the UI says so. */
 #define N_DOR_SLOTS 8
 static const LONG  g_dorDegTab[N_DOR_SLOTS] = { 90, 360, 600, 900, 1080, 1440, 540, 720 };
+/* v824: NOTHING IS SCALED DOWN BELOW 600 ANY MORE. ours-042, the A/B he asked for: 90 and 360 at
+   the July scale (F1 0.510, F2 0.840) against full force (F3, F4) - verdict: F3 and F4 better.
+   On ours-040 F1 had never registered and 90 at full force had already been rated excellent.
+   The July values were fitted on the OLD model's kicks; the new physics wants none of it. They are
+   kept in the comment for the record: 90 0.510, 360 0.840, 540 0.965 ((540/600)^(1/3)). */
 static const float g_dorK[N_DOR_SLOTS] = {
-    0.510f,   /*   90 - HIS value, 6 LIKE / 1 NOPE. The law would say 0.531        */
-    0.840f,   /*  360 - HIS value, 6 LIKE / 1 NOPE. The law would say 0.843        */
-    1.000f,   /*  600 - the reference he tuned everything on: untouched, by design */
-    1.000f,   /*  900 - at and above 600 nothing is scaled. See the three reasons  */
-    1.000f,   /* 1080 - above (slot drives 1080; he also tested 1440 by hand, same */
-    1.000f,   /* 1440 - same rule: nothing above 600 is scaled DOWN               */
-    0.965f,   /*  540 - (540/600)^(1/3) = 0.96549. Below the reference, so it IS
-                 scaled down, by the same law his 0.510 and 0.840 produced        */
-    1.000f,   /*  720 - above 600: nothing is scaled down. Same rule as 900       */
+    1.000f,   /*   90 - was 0.510 (July, his value on the old model) */
+    1.000f,   /*  360 - was 0.840 */
+    1.000f,   /*  600 - the reference he tuned everything on */
+    1.000f,   /*  900 - nothing above 600 is scaled down; the centring grows instead, g_centreK */
+    1.000f,   /* 1080 */
+    1.000f,   /* 1440 */
+    1.000f,   /*  540 - was 0.965 */
+    1.000f,   /*  720 */
 };
 static volatile LONG g_dorNow  = 0;    /* degrees, for the log. 0 = none declared yet */
 static volatile LONG g_dorSlot = -1;   /* -1 = none declared -> k = 1.0, i.e. v7.31   */
@@ -1431,6 +1484,37 @@ static volatile LONG g_dorSlot = -1;   /* -1 = none declared -> k = 1.0, i.e. v7
    the 2026-07-27 call rather than given an INI key - the utility's own sliders cover the
    same ground, and two controls on one quantity is how a settings dialog starts lying. */
 static volatile LONG g_dorTrim = 100;
+
+/* ---- v822, A DEBUG BUILD FOR ONE DRIVE: THE RANGE ON F1..F5 AGAIN ----
+   His request, 2026-09-30 (translated): "build me a debug version with 90, 360, 720 and 900
+   degrees on F1, F2, F3, F4 - I press F1, set 90 on the wheel, test how it feels, then switch";
+   above all, whether the centring still works away from 600. F5 = 600, the reference, so every
+   range is judged against it in the same drive.
+   THE KEY ONLY TELLS THE MODULE WHICH RANGE THE WHEEL IS SET TO. The wheel's own range is set by
+   hand in the wheel's software; a key that disagrees with it scales everything for the wrong range.
+   Off unless `range_keys = 1`. While on, the roll and crash banks give their F keys up (both are
+   settled: roll 38 and crash F6 are the unpressed state) and the ground presets bound to F1..F5
+   stay silent (FKeyOwnedByBank). A pressed key wins over the ini's `range` for the rest of the
+   session, the same rule as every bank here. Logged as 0x3D. */
+/* v823: THE SMALL-ANGLE A/B, his request after ours-040 (translated): "make me 90 with the July
+   values and 360 as in the drive on F1/F2, and on F3/F4 what was 90 x1 and 360 x1". On ours-040
+   his F1 never registered, so he drove 90 deg with the module at 600 - every force unscaled - and
+   called it excellent. F3/F4 reproduce exactly that: the SCALE comes from the 600 slot (k 1.000,
+   no kick floor, no roll boost), while the log records the degrees he set on the wheel.
+     key  declared  scaled as         k
+     F1      90        90          0.510, kicks at least 1300
+     F2     360       360          0.840, kicks at least 1500
+     F3      90       600          1.000
+     F4     360       600          1.000
+     F5     600       600          1.000, the reference */
+#define RANGE_KEYS_N 5
+static const int  g_rangeKeyVk     [RANGE_KEYS_N] = { 0x70, 0x71, 0x72, 0x73, 0x74 };   /* F1..F5 */
+/* v824: the bank tries THE NEW LAW at every range - no scale-down below 600, the centring grown
+   above it: F1 90, F2 360, F3 720, F4 900, F5 600, each scaled as itself. */
+static const LONG g_rangeKeyDeg    [RANGE_KEYS_N] = {   90,  360,  720,  900,  600 };   /* declared */
+static const LONG g_rangeKeyScaleAs[RANGE_KEYS_N] = {   90,  360,  720,  900,  600 };   /* the slot */
+static volatile LONG g_rangeKeys    = 0;
+static volatile LONG g_rangeKeyUsed = 0;
 
 /* ---- v7.52: A PERCEPTIBILITY FLOOR FOR KICKS AT SMALL RANGES ----
    Reported 2026-07-24, after reading the per-angle force table and explicitly declining to
@@ -1466,9 +1550,12 @@ static volatile LONG g_dorTrim = 100;
    drive stays bit-identical. The deep-slide nudge is under the floor at 600 too, but
    fixing that means changing the reference he has just frozen, so it is left alone and
    recorded instead. */
+/* v824: every floor is 0. The floors only existed to lift kicks the July scale had pushed under
+   his threshold at 90 and 360; with no scale-down there is nothing to lift, and F3/F4 of ours-042 -
+   the states he chose - had none. (Was 1300 at 90, 1500 at 360.) */
 static const LONG g_kickFloor[N_DOR_SLOTS] = {
-    1300,   /*   90 - "barely": above the floor, below the 1600 of a 600 deg bullet tap */
-    1500,   /*  360 - "a bit stronger", still under 1600                                */
+    0,      /*   90 - was 1300 */
+    0,      /*  360 - was 1500 */
     0,      /*  600 - the reference. No floor, bit-identical                             */
     0,      /*  900 */
     0,      /* 1080 */
@@ -1537,6 +1624,121 @@ static const float g_wallowK[N_DOR_SLOTS] = {
    g_gateFrac. Left pinned deliberately - slider #6 "road surface" in the tuner utility moves
    this same quantity, and exposing both would give one value two owners. */
 static volatile LONG g_wallowTrim = 100;
+/* v813: the ROLL half of the wallow channel, as a live percent. 100 = every drive up to v812,
+   bit for bit. v813 shipped 25; v818 ships 100 again - the original is the BASE, his correction
+   of 2026-09-30, and the reductions live on F2/F3. See the bank below. */
+static volatile LONG g_rollGainPct = 38;   /* v820: his roll reference, see the bank below */
+/* v814: the roll CEILING as a live number, because his three-way test needs it. F2R_CAP 3000 is
+   what every drive up to v813 ran; the preset that cuts by ceiling instead of by gain moves it. */
+static volatile LONG g_rollCap = 3000;
+/* v814: HIS THREE-WAY TEST OF THE ROLL CHANNEL, 2026-09-14 (translated): "make the roll three
+   states: F1 as it is now, F2 cut by gains so the whole rocking is quieter, F3 by the ceiling."
+   And for crashes in the same breath: "F4 the ORIGINAL crash curve", then "in 4 our current
+   state, in 5 and 6 the ones you changed".
+
+   v814 MISREAD THAT, and v818 corrects it. "Current state" was read as the current BUILD - v813,
+   whose roll was already cut to 25% and whose crashes were already at 85%, numbers he had never
+   driven - so F1 and F4 carried cuts and every other key was a cut of a cut. To him "current"
+   was what he drove, and his first word was "original". After ours-035 (2026-09-30, translated):
+   "F1 and F4 must be the base values, and F2/F3 the choice of going down proportionally or
+   through the ceiling." On ours-035 the old F1 (gain 25) was, in his words, weak.
+
+     F1   gain 100, cap 3000   THE ORIGINAL - every drive up to v812, bit for bit
+     F2   gain  38, cap 3000   quieter PROPORTIONALLY - "cut by gains", the whole rocking smaller
+     F3   gain 100, cap 1815   quieter by CEILING - ordinary rocking as it was, the big lean cut
+
+   THE DEPTH IS SET IN DELIVERED FORCE. The original is clipped: 54% of its live rows sit on the
+   3000 ceiling, so gain 25 delivered 44% of the original's mean, not 25%. His two verdicts
+   bracket 992 (gain 25, "weak") and 2229 (the original, "too amplitudinous"); F2 and F3 aim at
+   their geometric middle and are MATCHED ON MEAN FORCE there - 1504 and 1504 over the same 1476
+   live rows of ours-034 (tools\price-banks.py). F2 keeps every lean distinguishable (3% pinned),
+   F3 squashes the big ones into one another (69% pinned). What separates them is shape only. */
+/* v820: THE ROLL IS SETTLED. His verdict on ours-037 (translated): "F2 shows that the reference
+   for how the roll should feel is not F1 but F2" - gain 38 under the 3000 ceiling, and "the
+   rocking feels excellent" on it. So all three keys now give that reference: the question is
+   closed, and a key that changed it would only be a way to lose it mid-drive. The bank stays
+   ARMED on purpose - disarmed, F1..F3 would fall back to the ground presets (FKeyOwnedByBank).
+   The v818 layout (100 / 38 / cap 1815) is in git and in memory if it is ever wanted again. */
+#define ROLL_PRESETS 3
+static const LONG g_rollBankGain[ROLL_PRESETS] = {   38,   38,   38 };
+static const LONG g_rollBankCap [ROLL_PRESETS] = { 3000, 3000, 3000 };
+static volatile LONG g_rollKeys = 1;      /* F1..F3 armed; 0 gives the F keys back to the presets */
+static volatile LONG g_rollPresetCur = 1; /* ships on F1, the original                           */
+/* The key wins over the file for the rest of the session: the ini is re-read once a second, and
+   without this his F1 press would be undone a second later while the log went on reporting the
+   state he chose. Same trap, same fix, as the preset bank and the damper ladders. */
+static volatile LONG g_rollKeyUsed = 0;
+/* v813: THE MOD'S OWN CRASH TRIM, and it is deliberately NOT the `crash` slider. That slider is
+   the user's, and its 100 means "the mod as designed" - moving its default would make every
+   support conversation and every screenshot of the tuner lie. This one sits before it.
+   v813 shipped 85 on his ours-034 verdict ("crashes are a bit sharp after all... make them
+   smaller", translated). v818 ships 100 again: the original is the BASE on F4 by his correction
+   of 2026-09-30, and the reductions live on F5/F6 - see the bank below. 100 is the exact identity,
+   so with the bank switched off every drive up to v812 is reproduced bit for bit. The crash
+   FORMULA stays bit-identical - MAG_MIN 1250, MAG_EXCESS_SCALE 7600, MAG_SPD_SCALE 755, ceiling
+   25000 - as the standing rule requires; this is a percent applied to its output.
+   v821: THE UNPRESSED STATE IS F6, his reference after ours-039 (translated): "overall I liked F6
+   more... keep F6 as the reference". 70% up to 70 km/h of true impact speed, a straight line to
+   100% at 90 km/h. The initializer, the ini defaults below and the bank's start index must agree;
+   test_ffb_ground.c says so. F4 (the original) and F5 stay on their keys. */
+static volatile LONG g_crashTrimPct = 70;
+static volatile LONG g_crashCap = MAX_MAG;   /* the crash ceiling as a live number, v814 */
+/* v820: the speed ramp of the crash trim, km/h of TRUE entry speed. 0/0 = no ramp, i.e. the flat
+   g_crashTrimPct of every build before v820. See CrashTrimFor. v821: F6's 70/90 by default. */
+static volatile LONG g_crashRampLo = 70;
+static volatile LONG g_crashRampHi = 90;
+/* v814: HIS THREE-WAY TEST OF THE CRASH CURVE, asked for in the same breath as the roll one
+   (translated): "F4 the ORIGINAL crash curve, F5 by the ceiling, and F6 proportionally or
+   linearly... calculate yourself how best to shift everything lower... I will just switch between
+   the states and say which I like more."
+
+   v814 put v813's trimmed state on F4 on the same misreading as the roll bank - see there. v818
+   restores his own layout: F4 is the ORIGINAL, and F5/F6 are the two ways down from it.
+
+   v819: THE SAME ORDER AS THE ROLL BANK, his instruction of 2026-09-30 (translated): "make F5 and
+   F6 by gain and by ceiling too, otherwise F2 is by gain, F5 by ceiling, F3 by ceiling, F6
+   proportional - it is not consistent". So in BOTH banks the second key is the proportional cut
+   and the third is the ceiling. v814..v818 had F5 = ceiling and F6 = proportional; the state he
+   preferred on ours-035 under the name F6 ("F6 hit more interestingly than F5") is on F5 now,
+   unchanged.
+
+     F4   trim 100, cap 25000  THE ORIGINAL - every drive up to v812
+     F5   trim  70, cap 25000  quieter PROPORTIONALLY - the whole curve slides down
+     F6   trim 100, cap 10686  quieter by CEILING - an ordinary crash as it was, big ones cut
+
+   MATCHED ON MEAN FORCE so the A/B is about SHAPE, priced over the same 110 crashes from five
+   drives recorded at trim 100 (ours-024, ours-028, ours-034 and the release drives 10 and 11),
+   tools\price-banks.py:
+
+     F4  p50 11894  p90 25000  mean 13415   13.6% at the ceiling
+     F5  p50  8325  p90 17500  mean  9390    0.0% at the ceiling
+     F6  p50 10686  p90 10686  mean  9390   55.5% at the ceiling
+
+   The crash FORMULA is bit-identical in all three - MAG_MIN 1250, MAG_EXCESS_SCALE 7600,
+   MAG_SPD_SCALE 755. Only these two numbers move. */
+/* v820: THE CRASH TRIM FOLLOWS THE IMPACT SPEED. His verdict on ours-037 (translated): "up to 50
+   F5 scales the force of the hit excellently... just now at 60-70 it was too weak", and F4 "much
+   better" at 60. His numbers are the speedometer's MPH (checked: the needle on 60 while the log
+   read 97.6 km/h), so 50 mph = ~80 km/h and 60 mph = ~97 km/h.
+   WHY F5 WAS WEAK AT SPEED, measured over the drive's 51 kicks: above ~70 km/h the crash formula
+   is always at its 25000 ceiling, so 70% of it is a flat 17500 - every one of the 11 F5 hits up
+   there delivered exactly that. He expects a hit to keep growing with speed, and 70% of a clipped
+   ceiling cannot. At low speed the same 70% was rated excellent (7-8 thousand at 20-40 km/h), and the
+   ORIGINAL there was rated: the weak ones too strong.
+     F4  the ORIGINAL, flat 100 (his rule: the first key is the base values)
+     F5  70% up to 80 km/h, rising in a straight line to 100% at 97 km/h - his words, literally
+     F6  the same shape moved earlier: 70% to 70 km/h, 100% at 90 - the only open parameter is
+         where the rise belongs, and the not-bad rating at 70 km/h is the edge it is tested against
+   The ceiling stays the original 25000 in all three: the ceiling state was retired - on ours-037
+   it gave a 117 km/h and a 40 km/h hit the identical 10686, and he never spoke for it. */
+#define CRASH_PRESETS 3
+static const LONG g_crashBankTrim  [CRASH_PRESETS] = {     100,      70,      70 };
+static const LONG g_crashBankCap   [CRASH_PRESETS] = { MAX_MAG, MAX_MAG, MAX_MAG };
+static const LONG g_crashBankRampLo[CRASH_PRESETS] = {       0,      80,      70 };
+static const LONG g_crashBankRampHi[CRASH_PRESETS] = {       0,      97,      90 };
+static volatile LONG g_crashKeys = 1;
+static volatile LONG g_crashPresetCur = 3;   /* v821: ships on F6, his reference after ours-039 */
+static volatile LONG g_crashKeyUsed = 0;
 
 /* ---- v7.36: the TRUCK surplus becomes a live knob, because it was never judged ----
    Reported 2026-07-24: the truck damper was never properly tested, and approval was not
@@ -1766,12 +1968,40 @@ static float WallowGain(void)
     return g;
 }
 
+/* ---- v824: THE CENTRING GROWS ABOVE 600 BY THE SAME LAW AS THE ROLL ----
+   His verdict on ours-040 (translated): "from 600 and up the centring force needs our law... at
+   900 it returns to centre too reluctantly", and in the drive: this cube, set this value
+   of the cube. The same centring force at 900 is spread over 1.5x the wheel travel, so near centre it is
+   two thirds as stiff per degree and has further to come back against the same damper. The SAT and
+   the caster - the pair that centres - are multiplied by (R/600)^(1/3), exactly g_wallowK's rows;
+   crashes and roll are NOT touched by this (crashes and rolls to stay unchanged), and below 600 it is 1.
+   Applied where the three ground forces are summed, so the texture (detail) keeps its own scale. */
+static const float g_centreK[N_DOR_SLOTS] = {
+    1.000f,   /*   90 */
+    1.000f,   /*  360 */
+    1.000f,   /*  600 - the reference */
+    1.145f,   /*  900 - (900/600)^(1/3) */
+    1.216f,   /* 1080 */
+    1.339f,   /* 1440 - the law only, never driven */
+    1.000f,   /*  540 */
+    1.063f,   /*  720 */
+};
+
+static float CentreGain(void)
+{
+    LONG s = g_dorSlot;
+    return (s >= 0 && s < N_DOR_SLOTS) ? g_centreK[s] : 1.0f;
+}
+
 #define K_INIT   0u
 #define K_TELEM  1u
 #define K_FIRE   2u
 #define K_STEER  3u
 #define K_BUMP   4u
 #define K_WHEEL  5u   /* v7.32-DOR: wheel axis read-back. K_STEER is TAKEN (slip channel). */
+/* a = load*10000 (all wheels), b = planted bits | wheels<<16 | frontLoad*100<<20,
+   c = tan(slip)*10000 signed, d = the ground force actually added to the constant force. */
+#define K_GROUND 6u
 /* v7.32-DOR: K_WHEEL adds a second 8 ms stream beside the 0x75 telemetry, so the old cap of
    200000 records would have run out at ~13 minutes - half a drive that has five ranges to
    walk. And the cap is per PROCESS, not per run: he intends to replay the same mission three
@@ -2092,8 +2322,30 @@ void *memset(void *d, int c, size_t n)
 void *memcpy(void *d, const void *s, size_t n)
 { BYTE *p=(BYTE*)d; const BYTE *q=(const BYTE*)s; while(n--) *p++=*q++; return d; }
 
+#ifdef MAFIA_FFB_TEST
+/* THE SEAM THAT LETS A HOST TEST SEE A LOG ROW. Without it every Log() call returns at the handle
+   check below - there is no file on a test host - so a row that exists only to be read later
+   could be deleted entirely and nothing offline would notice. The tests assert on these. */
+DWORD g_ffbTestSpikeN = 0, g_ffbTestSpikeB = 0, g_ffbTestSpikeC = 0;
+LONG  g_ffbTestSpikeStep = 0;
+/* v816: the vehicle-swap row, so a host test can assert the INSTRUMENT a drive is judged by and
+   not only the behaviour. v815 shipped that row on a code another row wrote every second, and a
+   test that checked only the pointer would have passed it. */
+DWORD g_ffbTestSwapN = 0, g_ffbTestSwapB = 0, g_ffbTestSwapC = 0, g_ffbTestSwapD = 0;
+#endif
+
 static void Log(DWORD kind, DWORD a, DWORD b, DWORD c, DWORD d)
 {
+#ifdef MAFIA_FFB_TEST
+    if (kind == K_INIT && a == 0x29) {
+        g_ffbTestSpikeN++;
+        g_ffbTestSpikeB = b; g_ffbTestSpikeC = c; g_ffbTestSpikeStep = (LONG)d;
+    }
+    if (kind == K_INIT && a == 0x37) {
+        g_ffbTestSwapN++;
+        g_ffbTestSwapB = b; g_ffbTestSwapC = c; g_ffbTestSwapD = d;
+    }
+#endif
     /* v7.25: BUFFERED. Until now every single record did WriteFile + FlushFileBuffers, a
        synchronous disk flush per call - which is precisely why nothing in this project could
        ever be logged at the FFB thread's own 8 ms rate, and why every offline analysis has
@@ -2161,6 +2413,39 @@ static float Sqrtf(float x)
     memcpy(&i, &x, 4); i = 0x1FBD1DF5u + (i >> 1); memcpy(&y, &i, 4);  /* safe type-pun */
     y = 0.5f*(y + x/y); y = 0.5f*(y + x/y); y = 0.5f*(y + x/y);
     return y;
+}
+
+/* ---- v7.88 the impulse channel's witness, measured from POSITION -----------------------------
+   Speed over the `span` ticks ending at ring position `endCount`, or -1 when the ring does not
+   hold that much. PURE, and kept pure on purpose: it is the half of the witness a host can test
+   with no game, no wheel and no clock - hand it three arrays and it answers.
+   `endCount` is the monotone counter, masked here, so no caller juggles ring indices. */
+static float ImpRingSpeed(const float *px, const float *py, const float *dt,
+                          int endCount, int span)
+{
+    int i, last, first;
+    float t = 0.0f, dx, dy;
+    if (span < 1 || span > 24 || endCount < span + 1) return -1.0f;
+    last  = (endCount - 1) & IMP_RMASK;
+    first = (endCount - 1 - span) & IMP_RMASK;
+    for (i = 0; i < span; i++) t += dt[(endCount - 1 - i) & IMP_RMASK];
+    if (t <= 0.0f) return -1.0f;
+    dx = px[last] - px[first];
+    dy = py[last] - py[first];
+    return Sqrtf(dx * dx + dy * dy) / t;
+}
+
+/* Did the car's speed actually CHANGE, and is it still changed? 1 lets the kick out. */
+static int ImpulseConfirmed(const float *px, const float *py, const float *dt,
+                            int candCount, int nowCount, int span, float dvMin)
+{
+    float vB = ImpRingSpeed(px, py, dt, candCount, span);
+    float vA = ImpRingSpeed(px, py, dt, nowCount, span);
+    float d;
+    if (vB < 0.0f || vA < 0.0f) return 0;
+    d = vA - vB;
+    if (d < 0.0f) d = -d;
+    return d >= dvMin ? 1 : 0;
 }
 
 /* ---- device discovery ---- */
@@ -2288,6 +2573,22 @@ static HRESULT EnsureAcquired(void)
 
 static LONG g_curmag = 0x7FFFFFFF; /* force first write */
 
+/* ---- THE DEVICE CAN BE TAKEN FROM US MID-DRIVE, and until ours-019 nothing noticed ----------
+   `SetMag` has always called `EnsureAcquired()` before every write, which is why this needed
+   more than one line: once another process holds the wheel EXCLUSIVELY, `Acquire` cannot take it
+   back - it returns success on a device we do not own, and every `SetParameters` after it fails
+   with DIERR_NOTEXCLUSIVEACQUIRED. The only thing that works is to let go and take it again.
+   Counters, so the state is a number rather than a guess. */
+static volatile LONG  g_effFailN  = 0;     /* consecutive SetParameters refusals               */
+static volatile LONG  g_effFailHr = 0;     /* the last one's HRESULT                           */
+static volatile DWORD g_effFailAt = 0;     /* when it happened                                 */
+static volatile LONG  g_recovN    = 0;     /* recovery attempts                                */
+static volatile LONG  g_recovOk   = 0;     /* ... that got the device back                     */
+/* ini, read in GroundReadIni with the rest of the live-tuned keys. 0 = never attempt recovery,
+   which is the escape hatch if a driver ever dislikes being unacquired mid-flight. */
+static volatile LONG  g_recoverMs    = 2000;  /* no more often than this                       */
+static volatile LONG  g_recoverAfter = 8;     /* refusals in a row before we act               */
+
 /* ---- v7.56: a kick must be a REVERSAL, not more of the same ----
    Ported from upstream v7.56 (gog-patcher 2026-08-03), upstream's own measurement kept.
    Measured 2026-08-01. His 373.5 s side impact commanded 16374 for 400 ms - the longest
@@ -2365,7 +2666,23 @@ static void SetMag(LONG mag)
     HRESULT hr = ((SetParams_t)VT(g_eff, EFF_SETPARAMETERS))(
         g_eff, &g_eparm, DIEP_TYPESPECIFICPARAMS | DIEP_NORESTART);
     g_lastEffectHr = (LONG)hr;   /* M1b: the only line the status file needs from in here */
-    if (hr < 0) Log(K_FIRE, 0xEE, (DWORD)mag, 0, (DWORD)hr);
+    /* ---- THE DEVICE'S ANSWER IS A MEASUREMENT AND IT WAS NEVER COUNTED --------------------
+       0xEE has been written since v7.x and nothing ever read it. Drive ours-019: from 217.3 s
+       to the end, 1972 consecutive refusals, every one 0x80040205 = DIERR_NOTEXCLUSIVEACQUIRED,
+       and the last thirty-five seconds of his drive reached the wheel as nothing at all while
+       this module went on computing forces and logging them. He felt it and said so; the audit
+       passed the run. A log that records what we SENT and never whether it was ACCEPTED is an
+       instrument with a blind side exactly where the hardware fails.
+       These two counters are what the recovery below is driven by, and what the audit reads. */
+    if (hr < 0) {
+        Log(K_FIRE, 0xEE, (DWORD)mag, 0, (DWORD)hr);
+        g_effFailHr = (LONG)hr;
+        g_effFailAt = GetTickCount();
+        if (g_effFailN < 0x7FFFFFF0) g_effFailN++;
+    } else if (g_effFailN) {
+        Log(K_INIT, 0x27, (DWORD)g_effFailN, (DWORD)g_effFailHr, (DWORD)mag);
+        g_effFailN = 0;
+    }
 }
 
 static LONG g_curSpring = -1;
@@ -2689,6 +3006,71 @@ static HRESULT AcquireWithTimeout(void *dev)
         Sleep(250);
     }
     return (HRESULT)0x80070005;
+}
+
+/* THE POLICY, SPLIT OUT SO IT CAN BE TESTED WITHOUT A WHEEL. Everything else in the recovery path
+   needs a real DirectInput device and cannot be exercised on a host; this decision is where an
+   off-by-one would live, and it is pure arithmetic. */
+static int RecoverDue(LONG failN, DWORD lastAt, DWORD now)
+{
+    if (g_recoverMs <= 0) return 0;                 /* switched off in the ini                 */
+    if (failN < g_recoverAfter) return 0;           /* one refusal is not a lost device        */
+    if (lastAt && (DWORD)(now - lastAt) < (DWORD)g_recoverMs) return 0;   /* not yet            */
+    return 1;
+}
+
+/* WHO IS HOLDING THE FOREGROUND when the device stopped answering. It does not prove who took
+   the wheel - DirectInput will not say - but it is the difference between "something took it" and
+   "the game took it", and on this machine those need different fixes. Two rows: the process id
+   and the first eight characters of the window title, packed four to a DWORD. */
+static void LogForegroundOwner(void)
+{
+    HWND h = GetForegroundWindow();
+    DWORD pid = 0, a = 0, b = 0;
+    char t[12];
+    int i;
+    for (i = 0; i < 12; i++) t[i] = 0;
+    if (h) {
+        GetWindowThreadProcessId(h, &pid);
+        GetWindowTextA(h, t, 9);
+    }
+    for (i = 0; i < 4; i++) a |= ((DWORD)(unsigned char)t[i]) << (i * 8);
+    for (i = 0; i < 4; i++) b |= ((DWORD)(unsigned char)t[4 + i]) << (i * 8);
+    Log(K_INIT, 0x24, pid, a, b);
+}
+
+/* LET GO AND TAKE IT AGAIN. Runs on the FFB thread deliberately, at the top of its loop and never
+   inside SetMag: every DirectInput call in this module then happens on one thread, so there is no
+   race with the writes it is trying to repair. The hang that cost v7.4j is handled by
+   AcquireWithTimeout, which is the same watchdog the initial acquire uses - a bare Acquire here
+   could block the FFB thread inside the driver for ever.
+   An unacquired device unloads its effects, so they are started again and every cached
+   "coefficient unchanged" sentinel is cleared - otherwise the first write after a successful
+   recovery would be skipped as a no-op and the wheel would stay dead with the log saying it had
+   been fixed. That is the quiet half of this function and the reason it is not three lines. */
+static int DeviceRecover(void)
+{
+    HRESULT hr;
+    if (!g_dev) return 0;
+    g_recovN++;
+    Log(K_INIT, 0x23, (DWORD)g_effFailN, (DWORD)g_effFailHr, (DWORD)g_recovN);
+    LogForegroundOwner();
+    ((Acquire_t)VT(g_dev, DEV_UNACQUIRE))(g_dev);
+    Sleep(60);
+    hr = AcquireWithTimeout(g_dev);
+    if (hr < 0) {
+        Log(K_INIT, 0x25, (DWORD)hr, (DWORD)g_recovOk, (DWORD)g_recovN);
+        return 0;
+    }
+    if (g_eff)    ((Start_t)VT(g_eff, EFF_START))(g_eff, 1, 0);
+    if (g_spring) ((Start_t)VT(g_spring, EFF_START))(g_spring, 1, 0);
+    if (g_damper) ((Start_t)VT(g_damper, EFF_START))(g_damper, 1, 0);
+    g_curmag = 0x7FFFFFFF;
+    g_curSpring = -1;
+    g_curDamper = -1;
+    g_recovOk++;
+    Log(K_INIT, 0x25, 0, (DWORD)g_recovOk, (DWORD)g_recovN);
+    return 1;
 }
 
 static int InitFFB(void)
@@ -3086,6 +3468,2845 @@ static DWORD GetCarPtr(void)
     return car;
 }
 
+/* ================= THE GROUND CHANNEL - ported from the developers' own arithmetic ============
+ *
+ * Two things the stock game does that this module never had, both settled 2026-09-13 in the raw
+ * bytes of `FUN_0041fac0` after Ghidra mis-assigned the stack slots:
+ *
+ *     L = clamp( SUM over live wheels of (wheel+0xDC * wheel+0x90) / (mass * g * 1.1), 0, 1 )
+ *     friction coefficient = gain * master * L * max(1 - v/6, 0.034)
+ *     spring   coefficient = gain * master * L * min(v * 0.5, 1)
+ *
+ * `0x420687` and `0x4207e5` are the same instruction, `d8 4c 24 30`, reading the same slot: BOTH
+ * channels are multiplied by the tyre load. When the wheels unload, the game's whole feel dies -
+ * which is what Alex reported as the best thing their feedback does and the one thing ours lacks:
+ * when the wheels leave the ground... the weight on the wheel disappears. The wheel becomes empty.
+ *
+ * WHAT IS PORTED AND WHAT IS DELIBERATELY NOT.
+ *
+ *  - `L` is ported exactly. It is not a flag and not a wheel count: one planted wheel keeps it
+ *    non-zero and partial unloading gives a partial fade, which is his own question answered.
+ *  - The centre offset is ported in SPIRIT ONLY, and that is the instruction: natural self-steering
+ *    is wanted, but not the way it currently feels on the factory
+ *    settings, because they are somewhat clumsy. Theirs is a slip angle clamped to full lock
+ *    and rewritten 12.5 times a second, so it arrives as a series of steps - the sawing he
+ *    disliked in run 011. Ours is the same physical quantity, computed every tick of this thread,
+ *    smoothed with a time constant, slew-limited, and clamped to a fraction of lock. Same idea,
+ *    none of the staircase.
+ *
+ * I do not have the GTA V direct-drive mod's source in front of me and will not invent its
+ * internals. What is implemented here is the model such mods use and that the physics supports:
+ * self-aligning torque grows with slip angle, dies with tyre load, and fades in with speed.
+ * Point me at the repository and the details can be matched to it.
+ *
+ * Everything is live-tunable from mafia_ffb.ini and ON by default, because this is a test build:
+ * Request, 2026-09-13: enable it by default, because testing is under way anyway.
+ * No release is planned. THE RELEASE DEFAULT MUST GO BACK TO 0 BEFORE ANY ARCHIVE IS CUT - the
+ * approved reference build's forces are not to change unasked ([[ffb-reference-v767]]).
+ */
+#define VA_TICK_CALL   0x0042F60Fu   /* the E8 of `call 0041fac0` inside the vehicle tick       */
+#define VA_TICK_FUNC   0x0041FAC0u   /* its target; ECX is the VEHICLE, which is NOT our g_car   */
+
+volatile DWORD g_vehTick  = 0;               /* ECX as the game passes it, every physics tick   */
+volatile DWORD g_vehOrig  = VA_TICK_FUNC;
+
+/* Naked: nothing touched but a copy of ECX, then a tail jump, so the original function returns
+   straight to the game and nothing on its stack moves. */
+__attribute__((naked, used)) static void VehTickStub(void)
+{
+    __asm__ __volatile__("movl %ecx, _g_vehTick\n\t"
+                         "jmp  *_g_vehOrig\n\t");
+}
+
+/* WHY A DETOUR AND NOT A POINTER CHAIN. `[[0x0065115C]+0x24]`, which this module has used since
+   v7.1b, reaches the PLAYER ACTOR - the object whose speed is at +0x2A0C. The vehicle class that
+   owns +0x534 / +0xCA8 / wheel+0x90 is a different object and has no field at 0x2A0C at all. Run
+   014 proved it the expensive way: a sampler built on the old chain wrote not one row all drive.
+   The game itself hands us the right pointer four times a second, so we take it from there. */
+static int PatchVehicleTick(void)
+{
+    unsigned char now[5];
+    DWORD old = 0, rel;
+    MEMORY_BASIC_INFORMATION mbi;
+    if (!VirtualQuery((void *)VA_TICK_CALL, &mbi, sizeof(mbi))) return 0;
+    if (mbi.State != MEM_COMMIT) return 0;
+    { int i; for (i = 0; i < 5; i++) now[i] = ((const unsigned char *)VA_TICK_CALL)[i]; }
+    /* refuse on anything but this build's exact bytes - a different Game.exe is not this one */
+    if (now[0] != 0xE8 || now[1] != 0xAC || now[2] != 0x04 || now[3] != 0xFF || now[4] != 0xFF)
+        return 0;
+    rel = (DWORD)(DWORD_PTR)&VehTickStub - (VA_TICK_CALL + 5);
+    if (!VirtualProtect((void *)(VA_TICK_CALL + 1), 4, PAGE_EXECUTE_READWRITE, &old)) return 0;
+    *(DWORD *)(VA_TICK_CALL + 1) = rel;
+    VirtualProtect((void *)(VA_TICK_CALL + 1), 4, old, &old);
+    return 1;
+}
+
+/* ---- the model, and it is GTA V Manual Transmission's, not a spring --------------------------
+ *
+ * His instruction, 2026-09-13: take the zero-resistance-when-airborne from that mod, and make the
+ * steering weight natural - not just a dumb damper, but perhaps an offset of the return centre
+ * of the spring will give exactly this weight at speeds when steering, in sustained corners - and
+ * check it against GTAVManualTransmission and Assetto Corsa rather than inventing one.
+ *
+ * We analysed that mod already; the notes are `..\force-feedback\memory\gta-mt-analysis.md`.
+ * Its architecture answers both of his tasks at once, and it is better than the moving spring
+ * centre this block first carried, so that is dropped:
+ *
+ *     ConstantForce = SAT + Detail          (one effect, both components)
+ *     Damper        = speed-dependent friction        <- we already have this
+ *     NO spring effect at all
+ *
+ *     satForce = SATAmp * SATMult * 10000 * slipRatio * velFac * weightFactor * longSlipMult
+ *     weightFactor = frontWheelLoad / designFrontWheelLoad, raised to 2.5 when below 1
+ *     detail   = 1000 * DetailMult * (suspensionSpeed[FR] - suspensionSpeed[FL])
+ *
+ * WHY SAT IS THE ANSWER TO "WHERE THE WHEEL RETURNS TO". A self-aligning torque points where the
+ * tyres are actually rolling, so the wheel settles at the slip-free angle by itself - in a long
+ * corner that is a steady weight against your hands, in a slide it is the counter-steer pulling
+ * the wheel into the slide, and past the tyre's peak slip it FADES, which is how a real wheel
+ * tells you the front has let go. A spring pulled toward a computed centre cannot do that last
+ * part, and the stock game's version - centre clamped to full lock, rewritten 12.5 times a second
+ * - is the staircase he disliked in run 011.
+ *
+ * WEIGHT FACTOR IS HIS TASK 1, and it is per axle on purpose: the mod divides by the FRONT
+ * wheels' design load, so front wheels in the air take the steering force to zero even while the
+ * rears are still planted - most likely it is 1-2 front wheels in the air. The 2.5 exponent
+ * below design load is theirs: it makes the fade fast rather than linear, which is why it reads
+ * as the wheel going hollow rather than merely lighter. The wheel array is ordered L,R per axle,
+ * so indices 0 and 1 are the front pair.
+ *
+ * Kept from the stock game, because it is the same physics from the other end: the load comes
+ * from `wheel+0x90`, the suspension normal force, which is what `FUN_0041fac0` multiplies both of
+ * its channels by ([[empty-wheel-when-airborne]]).
+ */
+static volatile LONG g_gndOn      = 1;     /* master switch for everything in this block        */
+/* WHICH FEEDBACK THE PLAYER CHOSE in the utility: 0 this road model, 1 legacy (v7.67), 2 the
+   game developers' own. -1 = the key is absent, which is every file written before 2026-09-14 -
+   and at -1 nothing here changes behaviour at all, `ground` decides on its own exactly as it
+   did. See GroundReadIni. */
+static volatile LONG g_ffbMode    = -1;
+/* v815. The escape hatch for the vehicle re-validation in VehHunt: 1 = check every second that
+   the game still hands the actor the same vehicle object and re-resolve when it does not;
+   0 = the behaviour of every build up to v814, which keeps the old object for as long as it
+   still looks like a car - and a freed one does, for ever. */
+static volatile LONG g_gndRevalidate = 1;
+static volatile LONG g_gndGate    = 1;     /* our OWN continuous force also fades with the load */
+static volatile LONG g_gndSat     = 1;     /* the self-aligning torque - the steering weight    */
+static volatile LONG g_gndDetail  = 1;     /* the front suspension left-right differential      */
+static volatile LONG g_gndSatK    = 5000;  /* SAT force at the tyre's peak, full load and speed.
+                                              It must AGREE with the ini default below: the ini is
+                                              read at startup, so a disagreement only shows itself
+                                              on the one path where the read fails - which is the
+                                              path nobody tests.
+                                              6000 -> 5000 after drive ours-018b: *"if I turn it
+                                              like this and let go, it straightens it out far too
+                                              hard"* (Alex, 2026-09-13).
+                                              For scale, GTA MT's own peak is the
+                                              full 10000 of the DI range (`satForce = SATAmpMult *
+                                              10000 * slipRatio * velFac * weight * longSlipMult`,
+                                              WheelInput.cpp:962), so we sit at half of theirs.  */
+static volatile LONG g_gndOptDeg  = 9;     /* the tyre's optimal slip angle, degrees            */
+/* Percent of the peak left past the fade - GTA MT's `postOptSlipMin`, which THEY hardcode to 0.
+   15, not their 0, and the reason is his: *"it was as if there was no self-steer during the
+   U-turn"* (Alex, 2026-09-13, drive ours-018b).
+   Measured in his own log at 131.0-131.8 s - the steering angle sat at 0.55-0.68 rad with an
+   effective slip of 25-30 degrees, well past 2.5x the optimal 9, so SAT was EXACTLY 0 for the
+   whole manoeuvre and the only thing left holding the wheel was the caster's 1800. The floor is
+   their own parameter at a different value, not a mechanism of ours, and the dropout he likes
+   survives it: 15% of the peak is still an 85% collapse, and a locked wheel multiplies it by
+   `ground_long_floor` 20% on top. */
+static volatile LONG g_gndFalloff = 15;
+static volatile LONG g_gndPostRatio = 250; /* the fade ends at this x the optimal angle, x100   */
+static volatile LONG g_gndVmin    = 0;     /* cm/s where SAT starts - from the first motion     */
+static volatile LONG g_gndVfull   = 100;   /* cm/s where it is fully in - 3.6 km/h              */
+static volatile LONG g_gndDetailK = 900;   /* the road-texture differential                     */
+/* ---- THE DETAIL CHANNEL'S TWO MISSING HALVES, both taken from GTA MT rather than invented -----
+   Theirs (`VehicleData.cpp:132-153` and `WheelInput.cpp:635-647,1064`) differences the suspension
+   travel exactly as ours does, and then does two things ours did not:
+     - a trailing MOVING AVERAGE over `DetailMAW` frames, default 3, on the per-wheel compression
+       speed. A first difference of a position sampled every ~15 ms is a noise amplifier; theirs
+       is smoothed before it ever becomes a force and ours was not.
+     - an explicit clamp to +-`DetailLim`, default 5000 on the same +-10000 scale we use. Ours
+       borrowed `ground_sat_k` for the clamp, so the texture channel was allowed to be as large as
+       the primary one - and on his drive the residual after SAT and the caster reached 10188.
+   The load gate stays OURS and is a deliberate difference from them: no texture through wheels
+   that are in the air, which is the empty wheel he asked for. */
+static volatile LONG g_gndDetailLim = 5000; /* theirs: DetailLim                                */
+static volatile LONG g_gndDetailMaw = 3;    /* theirs: DetailMAW, samples in the moving average */
+/* ---- WHERE THE SLIP ANGLE'S SIGN COMES FROM, and it is the biggest single fix of this pass ----
+   THE MAGNITUDE and THE SIGN of the slip angle came from two different places, and only the
+   magnitude was any good. `wheel+0x108` is stored unsigned, so GroundRead signed it with the
+   lateral component of `wheel+0x4C` in the body frame - a quantity that is NEAR ZERO exactly when
+   the car is going roughly straight, which is when a large steering-angle slip is most common.
+   The result, measured on his own drive ours-018b:
+
+     - 169 reversals of the engine field between adjacent logged rows with BOTH ends over 0.05,
+       against 15 for the kinematic estimate over the same rows - the sign chattered while the
+       magnitude ran smoothly through its own bump;
+     - 211 reversals of SAT itself between adjacent rows with both ends over 1000 units;
+     - the two largest force steps of the whole drive, -5043 -> +6226 and -2370 -> +5162, are both
+       a sign flip at constant magnitude with the steering angle NOT moving (0.0839 -> 0.0818 rad),
+       and both land within four seconds of *"too much on flat ground, it hits far too hard"*
+       (Alex, 2026-09-13).
+
+   So the bangs on flat ground were not the road and not the detail channel: they were our own sign
+   source flipping under a force of five thousand units. His own hypothesis - the suspension - is
+   answered by the same log: the residual after SAT and the caster has a median of 109 units.
+
+   The fix is GTA MT's construction rather than a filter on ours. Theirs keeps one signed slip
+   angle throughout and returns `slipRatio * sgn(slip)` (WheelInput.cpp:810), so magnitude and sign
+   cannot disagree. Ours cannot measure their angle, but the kinematic front slip angle
+   `beta + a*yaw/v - delta` is the same quantity in the textbook form, it is already computed here,
+   and on his drive it carries the centring sign in 99.6% of loaded rows against 87.8% for the
+   device-frame sign. So: MAGNITUDE from the engine, which is the accurate half, SIGN from the
+   kinematic angle, which is the smooth half.
+
+   THE BAND makes a zero crossing a crossing rather than a flip: within `ground_sign_band`
+   milliradians of straight the force is scaled down linearly instead of jumping sides, which is
+   also the physically right answer - with no slip angle there is no aligning torque. Replayed
+   over his drive it takes the SAT reversals from 211 to 3 and the largest step from 11497 to 5917.
+   0 restores the old device-frame sign exactly, as an escape hatch. */
+static volatile LONG g_gndSignBand = 30;   /* milliradians; 0 = the old sign from wheel+0x4C     */
+/* Calls with bit-identical inputs before the car is called frozen. 20 is about 300 ms of an FFB
+   tick - long enough that no run of real physics repeats itself that exactly, short enough that a
+   pause is quiet almost at once. 0 = off, and then the wheel holds its last force in a menu the
+   way it did on drive ours-019. */
+/* v7.96: the speed curve's anchors. Declared HERE, with the rest of the ground channel's state,
+   because GroundReadIni runs far above the curve's own function and a definition that sits next
+   to its user compiled to fourteen "undeclared identifier" errors. */
+#define GND_SPD_PTS 8
+/* v817: THE BASE CURVE IS "THE HALF" AGAIN, his decision of 2026-09-30 after ours-035:
+   "make the heavier curve ... at high speed it needs more effort" (Alex, translated).
+   From v810 to v816 the base was the curve on I (22 34 39 49 65 84 105 173), on a reading of his
+   ours-033 verdict that the log does not support: the last curve he drove before it was THIS one,
+   on O, for 290 s, and I was never pressed. See memory\the-approved-driving-feel.md. The lighter
+   curve stays on I, so the two can be driven against each other without a build. */
+static volatile LONG g_gndSpdV[GND_SPD_PTS] = { 10, 20, 30, 50, 60, 70, 80, 110 };
+static volatile LONG g_gndSpdM[GND_SPD_PTS] = { 22, 34, 42, 60, 80, 100, 122, 190 };
+static volatile LONG g_gndSpdOn = 1;
+/* v7.97 - FOUR CURVES ON THE LETTERS, requested after the first drive on the curve: several of
+   these curves also on UIOP with an offset, so that several curves can be tested
+   while driving.
+
+   All four share the SAME speed anchors and all four pass through 100% at 40 km/h, which is the
+   property that makes them comparable: switching curves does not change how the city feels, only
+   how the weight GROWS away from it. Row 0 is flat-ish (nearly the pre-v796 wheel), row 1 is the
+   curve he chose, row 2 is what flattening the measured force-per-g exactly would need, row 3 is
+   past it - a ladder with a wrong end at each side, so the middle means something.
+
+   This also retires the letters' old job. Until v796 they set the base return, so pressing I in a
+   drive changed the weight and he could not tell that from the curve being cancelled - he said so
+   in as many words. One key, one meaning. */
+/* v7.98 - ONE CURVE, SCALED AS A WHOLE. v7.97 put four differently SHAPED curves on the
+   letters and it was refused in one sentence: a linear shift was expected, but the curves change.
+   It is unclear which button to press for the base, approved variant. The objection is
+   right twice - the shape he approved should not be a variable while something else is being
+   judged, and a bank whose baseline is not obvious cannot be used at speed.
+
+   So the curve is the one he drove and the letters multiply it. He expected exactly this
+   (movement by a multiplier) and that expectation beat the first answer:
+   shifting along the SPEED axis made the four keys read 1.19 / 1.00 / 0.66 / 0.40 at 40 km/h, so
+   switching a curve changed the city feel - the one thing that had to stay fixed while the growth
+   is being judged. A multiplier keeps the SHAPE identical and moves only the level.
+   I is 100 - the approved curve, bit for bit. */
+static volatile LONG g_gndSpdScale = 100;   /* percent, live; 100 = the curve as its key defines it */
+static volatile LONG g_gndCurveKey = 6;     /* which preset's curve is live; 6 = U, his scheme   */
+/* What the curve last read and last produced, for the log row 0x33. */
+static volatile float g_gndLastKmh = 0.0f;
+
+/* ---- v820: THE TRUE SPEED THE CAR HIT WITH, for the crash trim ----------------------------
+   His verdict on ours-037 made the crash trim depend on SPEED: 70% is right up to about 50 mph,
+   too weak at 60-70 mph, where the original is better. The crash path's own speed is the old
+   car+0x2A0C field, which is not a speed ([[speed-field-double-store]]) - so the trim reads the
+   physics velocity the ground channel already computes, and its MAXIMUM over the last 1.5 s,
+   because by the time a crash is detected the car has already slowed: the entry speed is what
+   he feels the hit against. Sixteen slots, one every 100 ms. Written and read on the FFB thread
+   only, so it needs no lock. */
+#define TSR_SLOTS    16
+#define TSR_STEP_MS  100u
+#define TSR_LOOK_MS  1500u
+static float g_tsrKmh[TSR_SLOTS];
+static DWORD g_tsrT[TSR_SLOTS];
+static int   g_tsrHead = 0;
+static DWORD g_tsrLast = 0;
+
+static void TrueSpeedRingPush(float kmh, DWORD now)
+{
+    if (g_tsrLast != 0 && (DWORD)(now - g_tsrLast) < TSR_STEP_MS) {
+        /* inside the same 100 ms: keep the higher of the two, so a short peak is not lost */
+        int cur = (g_tsrHead + TSR_SLOTS - 1) % TSR_SLOTS;
+        if (kmh > g_tsrKmh[cur]) g_tsrKmh[cur] = kmh;
+        return;
+    }
+    g_tsrKmh[g_tsrHead] = kmh;
+    g_tsrT[g_tsrHead] = now;
+    g_tsrHead = (g_tsrHead + 1) % TSR_SLOTS;
+    g_tsrLast = now;
+}
+
+/* the highest true speed in the last 1.5 s, km/h; 0 when the ring has nothing that recent */
+static float TrueEntryKmh(DWORD now)
+{
+    float best = 0.0f;
+    int i;
+    for (i = 0; i < TSR_SLOTS; i++) {
+        if (g_tsrT[i] == 0) continue;
+        if ((DWORD)(now - g_tsrT[i]) > TSR_LOOK_MS) continue;
+        if (g_tsrKmh[i] > best) best = g_tsrKmh[i];
+    }
+    return best;
+}
+
+/* THE CRASH TRIM FOR AN IMPACT AT `kmh`: `lowPct` up to rampLo, 100 from rampHi, a straight line
+   between. rampHi <= rampLo means no ramp - the flat trim every build before v820 applied, which
+   is what F4 (the original, 100) and an ini with no ramp keys still get. Pure, so a host test can
+   walk it across every speed. */
+static LONG CrashTrimFor(float kmh, LONG lowPct, LONG rampLo, LONG rampHi)
+{
+    float f;
+    if (lowPct >= 100 || rampHi <= rampLo) return lowPct;
+    if (kmh <= (float)rampLo) return lowPct;
+    if (kmh >= (float)rampHi) return 100;
+    f = (kmh - (float)rampLo) / (float)(rampHi - rampLo);
+    return (LONG)((float)lowPct + (100.0f - (float)lowPct) * f + 0.5f);
+}
+static volatile float g_gndLastSatMult = 1.0f;
+static volatile LONG g_gndStaleTicks = 20;
+static volatile LONG g_gndStale = 0;       /* 1 while the inputs have stopped moving             */
+static volatile LONG g_gndTauMs   = 40;    /* smoothing on SAT - theirs is per frame, we filter */
+static volatile LONG g_gndSlew    = 40000; /* ceiling on force change, units per second         */
+static volatile LONG g_gndInvert  = 0;     /* sign of SAT against this wheel's axis             */
+static volatile LONG g_gndLog     = 1;
+/* v7.87 - THE SPIKE ROW. Every other ground row is written one tick in four, which is one row
+   per ~64 ms: a bang that lasts two ticks can fall between them entirely, and what reaches the
+   report is then the quiet ticks either side of the thing he felt. That is tolerable for a
+   channel judged on its average and useless for one judged on its worst moment, which is what
+   his question after ours-020 is - the wheel is hit hard in a fast car and the old impact
+   family and the new ground model feel identical through the rim.
+   So: whenever the SENT force steps by this much between two ticks, write one row naming the
+   three terms it is made of. Unconditional, outside the 1-in-4 gate. 0 = off. */
+static volatile LONG g_gndSpike   = 1500;
+/* v7.8 - the front axle's slip angle and the damper trim. Declared here with the rest so
+   GroundReadIni, which sits above their users, can see them. */
+static volatile LONG g_gndAlphaMode   = 0;   /* 0 auto, 1 lateral-acceleration, 2 kinematic     */
+static volatile LONG g_gndAyGain      = 100; /* percent, the fallback term's weight             */
+static volatile LONG g_gndFrontAxleCm = 130; /* centre of mass to the front axle, cm            */
+static volatile LONG g_gndSteerLive   = 0;   /* set once the steering field is seen to MOVE     */
+/* The three inputs, kept for the log. Without them a row saying "the force was 3000" cannot be
+   told from a row saying "the force was 3000 for the wrong reason". */
+static volatile float g_gndLastBodySlip = 0.0f;
+static volatile float g_gndLastYaw      = 0.0f;
+static volatile float g_gndLastDelta    = 0.0f;
+static float GroundGate(void);   /* defined below, used by the logging block in GroundForce */
+/* The longest tick the assembly will believe. Past this the machine hitched; the force still moves
+   at its own slew ceiling and no faster. */
+#define GND_DT_MAX_MS   100
+/* THE CHANNEL'S CLOCK, and it has a seam for the tests on purpose. GetTickCount's granularity is
+   ~15.6 ms - the size of the FFB tick itself - so its delta can only ever be 0, 15 or 31, and an
+   offline test calling this function in a loop sees 0 every time. Everything time-dependent here
+   (the filter, the slew ceiling, the suspension derivative, the caster's rate term) would then be
+   untestable, which is how the hitch defect survived: no check could reach the branch.
+   QueryPerformanceCounter is not used here deliberately - the 64-bit division it needs pulls in a
+   compiler helper that does not exist under -nostdlib, which is why the tick log ships RAW counter
+   deltas and divides offline. */
+#ifdef MAFIA_FFB_TEST
+DWORD g_ffbTestNowMs = 100000;
+#define GND_NOW()   (g_ffbTestNowMs)
+#else
+#define GND_NOW()   GetTickCount()
+#endif
+/* The detail channel's moving-average window, bounded because it is a fixed array in a thread
+   frame that has already had to be defended once (see the NOINLINE note on GroundForce). */
+#define GND_MAW_MAX     8
+/* Samples of the sent force kept for the spike row's 60 ms window. Eight covers it at the FFB
+   thread's 8 ms tick and has slack at the 16 ms the game actually delivers. */
+#define GND_SPIKE_HIST  8
+
+/* ---- THE "0 HITS" INSTRUMENT, and it is not optional ----------------------------------------
+   Every refusal in GroundRead returns 0.0f and changes nothing, which on the wheel is
+   indistinguishable from a channel that is working and has nothing to say. Four of his drives
+   have already been spent on exactly that shape ([[the-drives-we-wasted]]), so these counters are
+   logged once a second whether or not anything happened - a run that measures nothing has to SAY
+   that it measured nothing. */
+static volatile LONG  g_gndCalls    = 0;   /* GroundForce entered                               */
+static volatile LONG  g_gndReads    = 0;   /* ... and a vehicle was actually read off the detour */
+static volatile LONG  g_gndAirTicks = 0;   /* ... with the front axle under 10% of its load      */
+/* -1 = the ini decides; 0 or 1 = SCROLL LOCK decided, mid-drive, and the ini stops overruling it.
+   The A/B has to happen inside ONE drive: his verdict on a feel is a hypothesis until the same
+   road is driven both ways within a minute of itself, and he cannot alt-tab to edit a file
+   because Mafia pauses the moment it loses focus ([[he-does-not-edit-files]]). */
+static volatile LONG  g_gndOverride = -1;
+/* Percent of the profile's moving damper kept while the ground model runs. It scales the MOVING
+   term only - the standstill damper he approved is untouched at any speed below the fade
+   threshold. It was 50, on his call of 2026-09-13: *"the damper can be turned down a bit, because
+   if we have an honest aligning torque... too much damper while moving may not be needed"*.
+
+   IT WAS 150 FOR ONE DRIVE AND HE THREW IT OUT, ours-019: *"the wheel was too stiff when the
+   feedback worked. Really too stiff, thick, viscous. I did not like it. In ordinary driving it
+   has to be much lighter than it was just now"* (Alex, 2026-09-13). Back to 50.
+
+   THE REASONING THAT PUT IT AT 150 WAS WRONG, AND THE WAY IT WAS WRONG IS WORTH KEEPING. GTA MT
+   ships DamperMax 100 and DamperMin 40, so their damper never falls below 40% of its standstill
+   value, and ours was at 13% - that part is true. But a DI condition coefficient is a SLOPE, and
+   theirs and ours are on the same +-10000 scale: with their gain of 50 they send 5000 standing
+   and 2000 moving, while we send 20000 standing - four times their slope, deliberately, because
+   20000 saturates at half of travel and that is the standstill weight he approved. Taking a RATIO
+   from a base four times larger delivered 7875 where they deliver 2000. The ratio matched and the
+   force did not, and he felt it in one drive. 2625 is 31% above their absolute, which is the
+   comparison that means something. Measured in his log: the damper sent while moving was a
+   constant 7875 and its p90 over the whole drive was 16232.
+
+   A number borrowed from another project has to be borrowed in the units the DEVICE sees, not in
+   the proportions the other project's own constants happen to have. */
+static volatile LONG  g_gndDampMovePct = 50;
+/* THE AIR IS NOT FREE-SPINNING. His correction, 2026-09-13: *"I do not care what happens in the
+   air, but the force on the wheel has to be zero. Some base damper should stay, but a really thin
+   one, just so the wheel does not spin freely - it should turn with a little finger. Say a damper
+   of 1000 or 2000 stays and everything else disappears completely."*
+   So the load gate takes SAT, the detail channel and the damper's whole moving value to nothing,
+   and this floor is what is left: enough to stop a direct drive coasting, not enough to feel like
+   weight. It can never exceed the damper the same moment would have had on the ground, so a user
+   who sets the damper sliders to zero still gets zero.
+
+   HIS NUMBER SINCE ours-018b, 1500 -> 500: *"but I would take the damper down further... even the
+   damper of that rest state should come off. Right now it is 2000 there or whatever. You can set
+   it to, say, 500"* (Alex, 2026-09-13). It goes in as asked. For the record it moves us TOWARDS
+   GTA MT, whose damper is multiplied by `(1 - wheelsOffGroundRatio)` and therefore reaches zero
+   outright with the steered wheels in the air (`WheelInput.cpp:251`). */
+static volatile LONG  g_gndDampAir = 250;
+/* ---- THE LONGITUDINAL-SLIP FADE, GTA MT's longSlipMult, ported rather than approximated -------
+   Theirs divides the tyre's surface speed by the contact patch's and maps 1..2 onto 1..0 with a
+   floor of 0.2: a spinning or locked tyre cannot align itself, so the steering goes light. We were
+   told this could not be ported because the wheel has no angular-velocity field. It can: the
+   tyre solver sets `wheel+0x120` bit 0x20 when the brake demand exceeds that wheel's longitudinal
+   grip limit (the wheel is LOCKED) and bit 0x80 when the drivetrain's surface speed differs from
+   the car's by more than 2 m/s with the drive force over the same limit (WHEELSPIN). The engine
+   clears both at the top of every tick, so they are this tick's verdict, not a latch.
+   Discrete where theirs is continuous, which is the simpler solution and the honest one: we have
+   the game's own yes/no rather than a ratio reconstructed out of three other fields. */
+static volatile LONG  g_gndLong      = 1;    /* the fade at all                                 */
+static volatile LONG  g_gndLongFloor = 20;   /* percent of SAT left, theirs is 20               */
+static volatile LONG  g_gndLongTauMs = 120;  /* smoothing, so a one-tick flag is not a jolt     */
+/* Which slip angle SAT follows. 0 = auto: the engine's own per-wheel angle once it has proved it
+   moves, and the lateral-acceleration estimate until then. 1 = force the estimate, 2 = force the
+   kinematic form, 3 = force the engine's angle. The auto default exists because a field read from
+   a listing is a hypothesis until a live game agrees with it, and the fallback is what the wheel
+   feels like while that is still unknown. */
+static volatile LONG  g_gndSlipSrc   = 0;
+/* ---- THE UNATTENDED RUN STEERS WITH WHATEVER THE WHEEL IS RESTING AT ------------------------
+   Alex, watching the autotest of 2026-09-13: *"possibly the wheel's position is already turned
+   left to begin with"*. It was, and the log proves it outright - the measured steering angle is
+   -0.53 rad in the very first row and walks to -0.69, near full lock, and never once crosses to
+   the other side. The car spun 270 degrees on the spot in a car park and drove into a wall
+   because the WHEEL was at full lock and nobody was holding it.
+
+   This is new damage from this very rework: the centring spring is gone and SAT is deliberately
+   silent below 2 m/s (GTA MT's own gate), so at a standstill nothing pulls the wheel back. With a
+   human in the seat that is correct and is what he asked for. With nobody in the seat it means
+   every unattended run measures a car driving in a circle.
+
+   So a bench-only pulse: hold a strong DirectInput spring for this many milliseconds after the
+   first tick, which physically drags the wheel to centre before a replay starts. DEFAULT 0 - it
+   must never be in a shipped ini, and `ground-keys.ps1` arms it on the bench only. */
+static volatile LONG  g_gndCentreMs  = 0;
+/* ---- THE CASTER TERM: self-steer that does not wait for speed ---------------------------------
+   His objection, 2026-09-13, and it is right: *"if there is no centring at all below 10 km/h that
+   is incorrect... what I need is not really a spring but self-steer as I drive. When I have turned
+   the car and start moving, the wheels naturally steer back."*
+
+   The physics, and our own log agrees with it: the aligning torque is `Fy x (pneumatic trail +
+   caster trail)`, and `Fy` follows the SLIP ANGLE and the load - not the speed. What falls away
+   with speed is the lateral force a steady corner DEMANDS (m v^2 / R), not the force a dragged
+   tyre generates. Measured in the corner run: at 2-5 km/h the front slip angle sits at 0.19 rad,
+   eleven degrees, right in the tyre's working range - and our force was zero there only because
+   `ground_v_min_cms` silenced it. GTA MT's 0.5-2.0 m/s ramp is numerical hygiene (their own
+   comment says the longitudinal slip is unstable below about 5 km/h), not a statement about
+   aligning torque.
+
+   So two changes. SAT now fades in from the first motion rather than from 1.8 km/h, and this term
+   is added beside it: the caster and kingpin geometry, which produces a restoring torque
+   proportional to the STEERING ANGLE and the front load at any rolling speed. It is what
+   straightens the wheels as you pull out of a turn.
+
+   At a true standstill it is silent, and that is deliberate rather than a limitation: with no
+   rolling there is no slip angle and a real car's wheel does NOT return - static scrub friction
+   beats the geometry, which is why a parked car keeps its lock. The standstill damper is that
+   friction, and it is untouched at 20000. */
+/* ---- THE CHECK THAT WOULD HAVE CAUGHT THE INVERTED SIGN --------------------------------------
+   The audit already had a check called "the caster restores - its sign opposes the steering
+   angle", and it passed on 261 rows of the very drive where the wheel was being dragged to full
+   lock. It could not have failed: it compared the sign of OUR force against the sign of OUR
+   measured angle, and both are expressed in the vehicle's frame. A flip between that frame and
+   the DirectInput axis is invisible to any comparison made entirely on one side of it.
+
+   So this one is closed-loop and physical, and the wheel itself answers it. While the car is
+   rolling and nothing is steering, push the wheel off centre with a fixed force, let go, and
+   watch the angle the GAME reports. If our sign is right the angle comes back; if it is wrong it
+   runs to the lock. No convention of ours takes part in the verdict - only the direction the
+   hardware actually moved.
+
+   BENCH ONLY, default 0, armed by `ground-keys.ps1`: it takes the wheel out of the driver's
+   hands for half a second, which is fine for an unattended replay and unacceptable in a drive. */
+/* ---- THE REPLAY CANNOT DRIVE A ROUTE WHILE WE ARE STEERING FOR IT ----------------------------
+   Three authored routes and one of HIS OWN recorded drives all ended wedged in a building inside
+   ninety metres. His route is not the problem - it is the only one in this project known to work.
+   The problem is that a recorded drive replays KEYBOARD taps that were made with a wheel sitting
+   where he left it, and in an unattended run our own force is free to turn that wheel: every tap
+   then lands on a car already steering somewhere else.
+
+   So on the bench the wheel is held near centre for the whole run, and released only for the
+   seconds the self-test is actually measuring. It changes what the CAR does, never what the model
+   COMPUTES - SAT, the caster, the gate and the fade are logged exactly as they would be - so the
+   forces stay readable while the route becomes repeatable.
+
+   BENCH ONLY, default 0. In a drive it would be a centring spring, which is the one thing this
+   whole rework removed. */
+static volatile LONG  g_gndHoldCentre = 0;
+static volatile LONG  g_gndSelfActive = 0;    /* 1 while the self-test owns the wheel            */
+static volatile LONG  g_gndSelfTest  = 0;     /* 0 = off, N = do it N times, alternating sides  */
+static volatile LONG  g_gndSelfMag   = 5000;  /* the displacing push                            */
+/* THE CASTER IS OURS, and GTA MT has no term like it - said plainly so nobody looks for it in
+   their source. It exists because their model has a hole we cannot live with: past 2.5x the
+   optimal slip angle their tyre curve is zero, so at full lock there is nothing holding the wheel
+   at all. They accept that; he does not, and drive ours-018b named it.
+   1800 -> 2400 WITH A SQUARE LAW (`ground_caster_exp` 200), which answers two of his complaints
+   with one curve instead of pulling the same constant in both directions:
+       at full lock   2400 against 1800 - the U-turn he said had no self-steer
+       at half lock    600 against  900
+       at a quarter    150 against  450 - the release he said straightened far too hard
+   It is a shape, not a new mechanism, and it is defensible as geometry: the kingpin's jacking
+   torque grows faster than the steering angle, which is why a real car's wheel comes back hardest
+   from full lock and gently from a few degrees. */
+static volatile LONG  g_gndCasterK   = 2400;  /* DI force at full lock, full load, rolling      */
+static volatile LONG  g_gndCasterExp = 200;   /* percent: 100 linear in the angle, 200 square   */
+static volatile LONG  g_gndCasterVcms = 40;   /* cm/s at which it is fully in - "rolling at all" */
+/* The rate term, and it was the self-test that asked for it rather than anybody's taste. With the
+   sign fixed, a wheel released from full lock came back in 0.66 s and then RANG at +-0.18 rad,
+   ten degrees, barely decaying. A restoring force with no damping is a spring by another name and
+   an oscillator by behaviour; a real steering system damps through the tyre and the box. So the
+   caster gets a term proportional to the steering angle's RATE, opposing it - and it rides the
+   same load and rolling gates, because a wheel in the air has nothing to damp against either. */
+static volatile LONG  g_gndCasterD   = 600;   /* force per rad/s of steering movement           */
+static volatile float g_gndLastCaster = 0.0f;
+static volatile float g_gndLastDetail = 0.0f;   /* the texture channel, for the log row 0x22     */
+static volatile float g_gndLastCasterD = 0.0f;  /* the caster's RATE term alone, for the log     */
+static volatile LONG  g_gndSlipLive  = 0;    /* the engine's angle has been seen to move        */
+static volatile float g_gndLastSinSlip = 0.0f;  /* what the engine said, for the log            */
+static volatile float g_gndLastLong    = 1.0f;  /* the smoothed longitudinal fade, for the log  */
+/* TWO KEYS, NOT A TOGGLE, and they are settings rather than constants.
+   It was Scroll Lock, then K. Alex killed both in turn, 2026-09-13, and the second objection is
+   the interesting one - *"two buttons then, one to switch it on and one to switch it off,
+   because I press K and I do not know whether it is on or off"*. A toggle only carries
+   information to
+   someone who already knows the current state, and he is driving a full-screen game with no
+   indicator - so the control was ambiguous exactly when it mattered, in the middle of the A/B it
+   exists to make possible. Two keys each ASSERT a state: press it twice and the state is still
+   the one you asked for.
+
+   'I' = on, 'O' = off - the I/O marking on every power switch ever made. Both come out of the
+   letter mark bank retired in v7.65 (U I O P J K L), which was chosen in v7.18 for a reason that
+   still holds: Windows maps letter keys by POSITION, so the physical key reports VK 0x49
+   whatever his Russian layout prints on it. `ground_key_on` / `ground_key_off` in the ini take
+   any VK, so a clash with the game is a number in a file rather than a rebuild. */
+static volatile LONG  g_gndKeyOn  = 0x47;  /* VK 'G' - switch the ground channel ON             */
+static volatile LONG  g_gndKeyOff = 0x4E;  /* VK 'N' - switch it OFF                            */
+static volatile LONG  g_gndAckMag = 4000;  /* the acknowledging nudge, 0 disables it            */
+static volatile LONG  g_gndAck = 0;        /* ticks of that nudge still owed                    */
+static volatile LONG  g_gndAckPat = 0;     /* 0 = ON nudge, 1 = OFF nudge, 2 = count N pulses   */
+static volatile float g_gndLastLoad = 0.0f;
+static volatile float g_gndLastGrip = 1.0f;  /* 1 = the front is gripping, 0 = it has let go   */
+static volatile LONG  g_gndDampSlip = 0;     /* % of the damper that goes with the grip, 0 = old */
+
+/* ---- v811: WHAT "THE FRONT HAS LET GO" MEANS TO THE DAMPER, and why it needed its own answer.
+   MEASURED IN HIS OWN LOGS, ours-033 and the 2026-09-14 morning drive, above 25 km/h, the damper
+   as SENT (log row 0x1D) against the engine's own slip angle (row 0x1E):
+
+       under 1 deg, driving straight   610 / 618   =  23% of the 2625 the setting asks for
+       1-3 deg                         985 / 972   =  38%
+       3-6 deg                        1434 / 1461  =  55%
+       6-9 deg, the peak              2129 / 2252  =  81-86%
+       over 9 deg, a real slide        756 / 577   =  22-29%
+
+   The damper was following the tyre-force CURVE, which is zero at zero angle and zero past the
+   fade - so a straight road and a slide were the same thing to it, and the wheel ran on a quarter
+   of its damper everywhere except mid-corner. On a parked car the same arithmetic turned the
+   20000 standstill damper into 4399, which is what Alex had been reporting by feel for days.
+
+   `ground_damp_grip_mode = 1` (the default from v811) says the front is GRIPPING until the slip
+   angle passes the peak, and only then follows the curve down. `damp_slip` keeps doing exactly
+   what he asked it for - removing the damper in a slide - and stops doing the thing nobody asked
+   for. Mode 0 is the arithmetic every drive up to v810 was judged on, kept because the approved
+   feel was approved WITH it, and the B key switches between them so the difference is heard
+   rather than argued. */
+/* ---- SETTLED BY ours-034, 2026-09-14, and both halves are his -------------------------------
+   MOVING: mode 0, the v810 arithmetic. He drove the fix and refused it, twice in his own words -
+   driving is definitely preferred on F6 and a direct damper is not wanted,
+   because everything was done to get a responsive wheel... yesterday it was tuned very finely and
+   for a long time. The fix stays in the file behind mode 1 because it is correct and because
+   the standstill half is built on the same arithmetic; it does not ship on.
+   PARKED: 6000, walked to on the F3/F4 ladder and then marked FIVE TIMES with F7 -
+   this standstill damper to be made the reference - the current one. The log has the state at those
+   marks: standstill 6000, mode 0, moving 2625. He allowed 7000 later and did not ask for it.
+   `ground_damp_stand` applies in either mode, so 6000 is reached without the moving feel moving. */
+static volatile LONG  g_gndDampGripMode = 0; /* 1 = gripping below the peak, 0 = the v810 curve   */
+static volatile LONG  g_gndDampStand = 6000; /* the damper at a standstill, 0 = whatever falls out */
+/* Rung 10 = 20000, because that is where the FIXED arithmetic actually lands a parked car: with
+   the grip mode on, a car at rest has no slip angle, so nothing is removed and the standstill
+   damper is the 20000 the setting has always named. Starting the ladder anywhere else would make
+   his first F3 press jump instead of step. */
+static volatile LONG  g_gndDampStandIdx = 9;
+static volatile LONG  g_gndDampMoveAbs = 0;  /* the moving damper as an ABSOLUTE, 0 = use the pct  */
+static volatile LONG  g_gndDampKeys = 0;     /* F1..F6 damper ladders, off since ours-034 settled  */
+/* THE KEY WINS OVER THE FILE for the rest of the session, exactly as the I/O override does. The
+   ini is re-read once a second, so without this his F1 press would be undone a second later while
+   the log went on reporting the value he chose - a trap this project has already paid for once
+   (v7.90, the preset bank) and the one thing that would make a whole tuning drive unreadable. */
+static volatile LONG  g_dampKeyUsed   = 0;
+static volatile LONG  g_dampKeepMode  = 1;
+static volatile LONG  g_dampKeepAbs   = 0;
+static volatile LONG  g_dampKeepStand = 0;
+static volatile LONG  g_gndCentreK   = 0;     /* concave rise: slope at zero is (1 + k/100), 0 = off */
+static volatile float g_gndLastForce = 0.0f;
+
+/* ---- v825: EVERY SLIDER GOES TO 400%, AND EVERY CEILING GOES WITH IT --------------------------
+   His decision after ours-041 (900 deg on a 2 Nm base, "far too weak", Alex 2026-09-30): no
+   tuning for weak hardware - instead every slider the utility writes gets headroom to 3-4x,
+   0..400%, with 100% = his reference. And HOW a slider scales is the rule the roll and crash cuts
+   were settled on: PROPORTIONALLY. A slider multiplies its channel's whole curve, that channel's
+   own ceiling included. A ceiling that stays put while the force grows under it is a cut, not a
+   slider - at 150% the v824 crash cap flattened every fast hit to the same 25000.
+
+   What that takes, one line each:
+     - the crash kick is capped BEFORE the slider, so the cap scales with it (CrashKickMag);
+     - the ceiling guard reads the SLIDER-FREE magnitude, or a slider would decide which kicks
+       have to be corroborated ([[slider-vs-detector]] - the trap this project has paid for);
+     - the ceiling on the continuous SUM scales with the largest slider in it (ContinuousCap);
+     - the ground channel's slew ceiling scales with the channel (GroundScalePct), or at 400% the
+       wheel would trail the same corner four times further behind;
+     - every ini clamp on a key the utility writes admits 4x his reference (HEADROOM).
+   The device's own maximum stays the physical ceiling: nothing here adds a clamp below the scaled
+   values. AT 100% EVERYWHERE EVERY CEILING IS THE v824 NUMBER TO THE BIT - the scales are whole
+   percents and every multiply is skipped at 100, because a float that is "1.0 give or take" at the
+   reference is exactly how "inert at the default" stops being true on an x87. */
+#define SLIDER_MAX_PCT       400
+#define HEADROOM(ref)        ((LONG)(ref) * SLIDER_MAX_PCT / 100)
+/* His reference as the module's ini defaults, in ONE place, so the scale a key is measured against
+   and the value a silent ini gives cannot drift apart. memory\the-approved-driving-feel.md. */
+#define GND_REF_SAT_K        7875   /* 875 per degree x the 9-degree breakaway */
+#define GND_REF_CASTER_K     2400
+#define GND_REF_DETAIL_K      900
+#define GND_REF_DETAIL_LIM   5000
+#define GND_REF_DAMP_STAND   6000
+#define ROAD_REF_ROLL_CAP    3000
+
+/* THE CRASH KICK'S MAGNITUDE, for both sharp-crash fire sites. v824 applied the slider first and
+   the cap after it - `Mul(Mul(force, trim), crash)`, then `min(.., g_crashCap)` - so above 100% a
+   hit already at the formula's 25000 could not grow at all. Capping FIRST and scaling after is the
+   same number at 100% (Mul is the identity there) and min(a*p, c*p) = min(a, c)*p for every p, so
+   the cap now scales with the slider exactly as the kick does.
+   *guardMag receives the magnitude AT 100%: the ceiling guard's population must not move with a
+   slider. In v824 crash = 400 made every kick above 6250 a "ceiling kick" to be corroborated, and
+   crash = 50 took the guard away from the real ceiling kicks altogether. */
+static LONG CrashKickMag(LONG force, LONG trim, LONG *guardMag)
+{
+    LONG ref = Mul(force, trim);
+    if (ref > g_crashCap) ref = g_crashCap;
+    if (guardMag) *guardMag = ref;
+    return Mul(ref, g_pctCrash);
+}
+
+/* How big a key is against his reference, in WHOLE percent, rounded UP - a ceiling scaled from it
+   may be a hair generous, never a hair short. Exactly 100 at the reference. The 1000000 is an
+   overflow guard on `v * 100` for a hand-typed absurdity, not a limit on anything real. */
+static LONG PctOfRef(LONG v, LONG ref)
+{
+    if (v < 0) v = (v < -1000000) ? 1000000 : -v;
+    if (v > 1000000) v = 1000000;
+    return (v * 100 + ref - 1) / ref;
+}
+
+/* The ground channel's size against his reference, in percent: the largest of its three gains.
+   The utility writes the weight as sat_k AND caster_k together and the texture as detail_k (with
+   its limit), so a slider moves at least one of these - and a bench file that moved only one is
+   still measured by the one it moved. The limit is not a gain and is not counted: it follows
+   detail_k in the utility, and a limit raised alone does not make the channel any bigger. */
+static LONG GroundScalePct(void)
+{
+    LONG s = PctOfRef(g_gndSatK, GND_REF_SAT_K), r;
+    r = PctOfRef(g_gndCasterK, GND_REF_CASTER_K); if (r > s) s = r;
+    r = PctOfRef(g_gndDetailK, GND_REF_DETAIL_K); if (r > s) s = r;
+    return s;
+}
+
+/* THE CEILING ON THE CONTINUOUS SUM - road (roll + pitch) x `road`, the old slip SAT x `sat`, and
+   the ground channel - which v824 clamped at a flat MAX_MAG. It scales with the LARGEST slider in
+   the sum, so no channel at up to 400% meets a ceiling tighter than the one it met at 100%; a
+   channel at 100% beside it keeps its v824 relation to the ceiling or gains room, never loses it.
+   Whole percents, so at the reference this is Mul(MAX_MAG, 100) = MAX_MAG exactly. 10000 is an
+   overflow guard on Mul (100x, far past any slider), not a ceiling on anything a slider reaches. */
+static float ContinuousCap(void)
+{
+    LONG h = g_pctRoad, g;
+    if (g_pctSat > h) h = g_pctSat;
+    if (g_gndOn) { g = GroundScalePct(); if (g > h) h = g; }
+    if (h < 0) h = 0;
+    if (h > 10000) h = 10000;
+    return (float)Mul(MAX_MAG, h);
+}
+
+/* v825: A HOTKEY OF 0 IS NO KEY. The utility writes 0 into a player's ini for every developer key -
+   his rule since 2026-08-01, "no F-keys in a shipping build", restated for release 2.0 - and v824
+   turned a 0 back into the DEFAULT key for `ground_key_on/off` and every `presetN_key`. With the
+   banks off that was worse than writing nothing: F1..F5 went live as presets, F5 swapped the
+   steering to the old 4-degree reference for the rest of the session, U I O P switched the speed
+   curve, G and N the road model. A value outside 1..254 is still a typo and still falls back;
+   a 0 is a decision and is kept. KeyDown refuses vk 0 and PollPresetKeys skips it, so a 0 kept
+   here never reaches GetAsyncKeyState. The bench keeps its keys: tools\ground-keys.ps1 writes
+   real VKs. */
+static LONG HotkeyVk(LONG v, LONG dflt)
+{
+    if (v == 0) return 0;
+    if (v < 1 || v > 254) return dflt;
+    return v;
+}
+
+/* ---- v7.90: THE PRESET BANK - five complete feels, one key each ------------------------------
+   Request, 2026-09-13: make all the modes easy to change with one key press or with
+   several key presses, so that what is liked, and when, can then be reported.
+
+   One key per preset, never a cycle - the same reason the ground channel got two keys instead of
+   one ([[no-numpad-keyboard]]): a cycle key leaves him not knowing where he now is, and he is
+   driving a full-screen game with no indicator. F3 means preset 3 whatever was live before, so
+   the state never has to be remembered, and pressing it twice still leaves him in preset 3.
+
+   The five presets are DATA IN THE INI, not constants, and GroundReadIni re-reads the file every
+   second - so a preset can be retuned WHILE HE DRIVES, one number at a time, without a rebuild
+   and without him leaving the car. That is the tuning session the worklist asks for.
+
+   F1..F5 are the camera's seat nudges in ordinary use; `tools\ffb-preset-keys.ps1 -Take` clears
+   the camera's six key_seat_* for the duration of an FFB drive and -Give puts them back, exactly
+   as the origffb probe already does it. Every key is a setting (preset_key1..5), so a clash is a
+   number in a file rather than a rebuild. */
+/* v7.94: NINE presets, because the bank is now TWO LADDERS and his instruction was to build both:
+   the demand for a later breakaway everywhere except F5 put a breakaway ladder on F1..F4, and the added
+   demand for a steering ladder on U I O P puts a steering-return ladder on the four letters. Each ladder
+   moves ONE quantity and holds everything else equal, which is the only way a drive can answer
+   which rung is right. F5 is untouched and belongs to neither: it is the reference he asked to
+   keep as the starting point. */
+#define GND_PRESETS 9
+/* F1..F5, then U I O P. The letters were OUR OWN retired mark bank (docs\KEY-MAP.md), so this is
+   a reuse, which is what he asked for. The game's defaults leave O and P alone; U and I it binds
+   (I is INVENTORY), and that class of clash was already ruled not to matter. What could
+   NOT stand is a key doing two of OUR things at once - I and O were the ground channel's own
+   on/off pair until this build, so that pair moves to G and N below. */
+static volatile LONG g_presetKey[GND_PRESETS]  = { 0x70, 0x71, 0x72, 0x73, 0x74,
+                                                   0x55, 0x49, 0x4F, 0x50 };
+/* THE NUMBERS COME FROM HIS OWN DRIVING, not from taste. `tools\preset-preview.py` replays an
+   archived drive's real angles and loads through each preset's curve; on ours-022 his front slip
+   angle has a MEDIAN of 1.41 degrees, p90 of 5.4 and p99 of 42. The first bank written here put
+   the peaks at 12 and 14 degrees with a bend of 200, and the preview said those presets would
+   have left 2 units of force where the baseline has 134 - a wheel that is dead in ordinary
+   driving, which he would have reported as "empty" and been right. A peak must sit near the
+   angles he actually reaches, and a square rise is too much at 1.4 degrees whatever the peak. */
+/* THE BANK AFTER ours-023, and the layout is SPECIFIED: F1 kept as the base, F2 and F4 dropped, and
+   in their place were added... two new modes that might be even stronger than F5,
+   vivid, but with a weaker damper. F1, F3 and F5 are untouched so the three that the driver
+   already has an opinion about stay comparable; F2 and F4 are the new pair.
+
+   WHAT HE JUDGED, MEASURED FROM HIS OWN DRIVE. The "centre feel" he ranked the presets by is the
+   force at SMALL slip angles, and the log agrees with him to the row - median |force| between 0
+   and 0.5 degrees above 50 km/h: F5 232, F3 154, F2 148, F1 110, F4 106, and F5 is the one he
+   liked most. That number is the curve's SLOPE AT ZERO, `sat_k / opt_deg * (1 - bend/100)`, so
+   the two new presets get there by moving the peak in and straightening the rise, not by a knob
+   nobody has. (The caster was my guess for this and it was WRONG - it cannot be, it follows the
+   steering angle and is unchanged between presets.) */
+/* THE BANK AFTER ours-024 IS A LADDER OF BREAKAWAY ANGLES, and that is his instruction:
+   the breakaway to come later on all except F5, since it is the reference point. Maybe make several
+   different breakaways to find a good one. So F1..F4 differ ONLY in where the tyre lets go - 12, 16,
+   20, 24 degrees - and every other quantity is held equal between them: the same ceiling, the
+   same light damper, and the same force per degree at dead centre (~1140), which is what
+   ground_centre_k is for. The measurement the ladder brackets: on ours-024 the engine's own
+   squeal flag is up in 0.2-2.6% of rows below 20 degrees of OUR angle, 14.5% at 20-25 and 90.7%
+   at 25-30, so the game's tyre lets go somewhere around 20-22.
+
+   THE DAMPER IS SPECIFIED TOO: drifting wanted by feel, by lightness, like on F2 or even like
+   between F2 and F4, not like now on F5. F5 was too heavy because of the damper. ours-024's
+   F2 was 30/70 and its F4 15/85, so the whole ladder runs 22/78 - between the two he named.
+   F5 keeps 50/0 because F5 is the reference he asked to leave alone, which makes it the heavy
+   "before" rather than a candidate. */
+/* THE SECOND LADDER, U I O P: one breakaway for all four (16 degrees, the middle of the first
+   ladder) and only the centre moves - 875, 1140, 1400, 1700 force per degree at dead centre.
+   875 is F5's own return, the one he has liked; 1400 is the old F2 he called too sharp when it
+   came with a peak at 5 degrees; 1700 is past it, because a ladder that stops at the number he
+   already rejected cannot tell us the rejection was about the return rather than the peak. */
+static volatile LONG g_presetOn[GND_PRESETS]   = { 1, 1, 1, 1, 1, 1, 1, 1, 1 };
+static volatile LONG g_presetOpt[GND_PRESETS]  = { 9, 9, 9, 9, 4, 9, 9, 9, 9 };
+static volatile LONG g_presetFall[GND_PRESETS] = { 0,  0,  0,  0,  0, 0,  0,  0,  0  };
+static volatile LONG g_presetPost[GND_PRESETS] = { 170, 170, 170, 170, 300, 170, 170, 170, 170 };
+static volatile LONG g_presetBend[GND_PRESETS] = { 100, 100, 100, 100, 130, 100, 100, 100, 100 };
+static volatile LONG g_presetSatK[GND_PRESETS] = { 7875, 7875, 7875, 7875, 5000,
+                                                   7875, 7875, 7875, 7875 };
+/* The damper, per preset. `damp_pct` is the moving damper as a percentage of the profile's,
+   `damp_slip` is how much of it goes away when the front lets go. The whole ladder is 22/78 (see
+   above); only F5 keeps the heavy 50/0 he drove before, as the reference. */
+static volatile LONG g_presetDamp[GND_PRESETS] = { 50, 50, 50, 50, 50, 50, 50, 50, 50 };
+static volatile LONG g_presetDSlip[GND_PRESETS] = { 78, 78, 78, 78, 0, 78, 78, 78, 78 };
+/* v7.94: the concave rise is what HOLDS THE CENTRE STILL while the peak walks out. The slope at
+   zero is sat_k / opt_deg * (1 + k/100), so a peak twice as far out halves the centre unless k
+   rises with it. Solved for ~1140 force per degree at dead centre, the middle of the three
+   returns designed for v793: k = 1140 * opt / 14000 - 1, which is 0 (12 deg, the line already
+   gives 1167), 30 (16), 63 (20) and 95 (24). That is the point of the ladder - the only thing
+   his hands should be able to tell apart between F1 and F4 is WHERE the front lets go.
+
+   The letter ladder solves the same equation the other way: the peak is pinned at 16 and k is the
+   variable, k = target * 16 / 14000 - 1, so 0 / 30 / 60 / 94 give 875 / 1140 / 1400 / 1697. */
+static volatile LONG g_presetCK[GND_PRESETS]   = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+/* v7.95: the RETURN axis, force per degree at dead centre. Non-zero marks a preset as a return
+   rung: it sets this one quantity and leaves the breakaway, the damper and the fade alone.
+   875 is the return APPROVED on ours-027 (f3 and U are the reference, better than f5 before), and
+   on the same day two rungs BELOW it were requested: sometimes there still arose a feeling of too
+   fast and sharp feedback. So the ladder slid down by two: the approved 875 now sits on
+   O, the old I sits on P, and U and I are the softer pair nobody has driven yet. */
+static volatile LONG g_presetRet[GND_PRESETS]  = { 875, 875, 875, 875, 0, 0, 0, 0, 0 };
+/* v7.97: which SPEED CURVE each preset selects, -1 = none (it is not a curve key). U I O P are
+   the speed SHIFT of the one approved curve; F1..F4 and F5 are not curve keys and leave it alone. */
+/* 0 = NOT a curve key; 1..4 select rows 0..3 of the bank. Zero rather than -1 because
+   GetPrivateProfileInt returns a UINT: an ini holding -1 reads back as 4294967295, the arming
+   tool refuses it as "did not take", and the trap is already written up in [[truck-damper-sliders]]. */
+/* v7.99 - TWO CURVES ON TWO KEYS, instruction of 2026-09-14: put the specified scheme on key
+   U and the physics on key I. These two keys then switch between the specified scheme and the physics.
+   U carries the shape he specified band by band after ours-030; I carries the measured flattening
+   from [[the-wheel-must-get-heavier-with-speed]]. O and P deliberately carry NOTHING: they restore
+   the base, exactly like F1..F4, so a stray press cannot land him on a third feel in the middle of
+   an A/B. Two keys, two answers. */
+static volatile LONG g_presetCurve[GND_PRESETS][GND_SPD_PTS] = {
+    {0,0,0,0,0,0,0,0}, {0,0,0,0,0,0,0,0}, {0,0,0,0,0,0,0,0}, {0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0},
+    /* U - the curve he DROVE on ours-032 (v803). The fixed foot of every comparison. */
+    { 22, 34,  46,  70,  95, 115, 138, 208 },
+    /* I - THE LIGHTER CURVE, and the base from v810 to v816. Computed from his three conditions
+       against the curve he had driven (20 unchanged, 50 cut by 30%, the weight felt at 80 arriving
+       at 95). It became the base on a reading of his ours-033 verdict that the log does not
+       support - "write this new one on I as the absolute reference for how driving feels"
+       (Alex, 2026-09-14) came after 290 s on O, with I never pressed. After ours-035 he found
+       the wheel too empty on it, above all at speed. Kept here so the comparison is one key away.
+       See memory/the-approved-driving-feel.md. */
+    { 22, 34,  39,  49,  65,  84, 105, 173 },
+    /* O - "THE HALF", halfway between U and I, and THE BASE AGAIN since v817. The curve he drove
+       last before naming a reference, and the one he asked for back after ours-035: "make the
+       heavier curve - at high speed it needs more effort" (Alex, 2026-09-30). Same numbers as
+       g_gndSpdM, so pressing O restores the unpressed state exactly. */
+    { 22, 34,  42,  60,  80, 100, 122, 190 },
+    {0,0,0,0,0,0,0,0}
+};
+static volatile LONG g_presetScale[GND_PRESETS] = { 100, 100, 100, 100, 100, 100, 100, 100, 100 };
+/* 1 = this preset sets the speed shift, 0 = it does not touch it. A separate flag rather than
+   "shift != 0", because I's shift IS zero and that is the approved curve, not "no opinion". */
+static volatile LONG g_presetIsCurve[GND_PRESETS] = { 0, 0, 0, 0, 0, 1, 1, 1, 0 };
+static volatile LONG g_presetCur = 0;      /* 0 = none pressed yet, the ini's own values stand  */
+
+/* THE BEND of the tyre curve below its peak. 100 = the straight line we have shipped so far;
+   200 = a square, which is light at small angles and builds hard as the corner tightens. His
+   words for what is missing: the wheel getting loaded as the corner tightens, like in Assetto
+   Corsa"*. Implemented as a blend between the line and the square rather than a true power,
+   because this module links -nostdlib and has no powf - and a blend is monotonic, exact at both
+   ends, and costs two multiplies. */
+static volatile LONG g_gndBend = 100;
+
+/* "preset" + digit + suffix, built by hand because this module links -nostdlib and has no
+   sprintf. buf must hold at least 32 bytes; every suffix below is far shorter than that. */
+static void PresetKeyName(char *buf, int idx, const char *suffix)
+{
+    const char *p = "preset";
+    int i = 0;
+    while (*p) buf[i++] = *p++;
+    buf[i++] = (char)('1' + idx);
+    for (p = suffix; *p; p++) buf[i++] = *p;
+    buf[i] = 0;
+}
+
+/* Put a preset's whole feel in force. Called from the key AND from the end of every ini re-read:
+   without the second call the file would silently undo his choice one second after he made it,
+   which is exactly the trap the ground channel's override line above was written for. */
+/* v7.95 - THE BANK IS TWO AXES, and the design was requested: UIOP as the steering-return tuning,
+   not at breakaway 8 but at the breakaway set with the keys F1 and F4 (2026-09-14).
+
+   Until now every key asserted a COMPLETE feel, so the letter ladder had to pin a breakaway of its
+   own and pressing F2 silently threw away whichever centre he had chosen. Two ladders that
+   overwrite each other cannot answer two questions in one drive - ours-026 shows exactly that, at
+   03:04: unclear what was going on with the steering settings.
+
+   So: F1..F4 set WHERE THE TYRE LETS GO, U I O P set HOW HARD THE WHEEL RETURNS, and the two
+   compose. The return is stored as force per degree at dead centre, not as a curve constant,
+   because that is the quantity he ranks by and it is the one that must survive a change of peak.
+   With a straight rise the peak force follows from the two: sat = return x opt. So moving the
+   breakaway out makes the peak stronger and leaves the centre exactly where it was, which is the
+   whole point of separating them.
+
+   F5 is neither axis: it is the untouched reference, and pressing it CLEARS the return override so
+   the wheel is bit-for-bit the preset he has been comparing against since ours-023. */
+static volatile LONG g_curRetK   = 0;   /* force per degree at centre, 0 = no override (F5's own) */
+static volatile LONG g_curBreak  = 0;   /* 1..4, which breakaway rung is live; 0 = none pressed   */
+
+static void PresetApply(int idx)
+{
+    if (idx < 0 || idx >= GND_PRESETS) return;
+    /* v7.97: A LETTER SELECTS A SPEED CURVE and nothing else. It does not touch the breakaway
+       (fixed at F3's 9 degrees on 2026-09-14: F3 is now left in place and locked, and
+       no further change is wanted), it does not touch the base return, the damper or the fade.
+       Every curve passes through 100% at 40 km/h, so switching one mid-drive cannot change how
+       the city feels - only how the weight grows away from it. */
+    if (g_presetIsCurve[idx]) {
+        int k;
+        for (k = 0; k < GND_SPD_PTS; k++) g_gndSpdM[k] = g_presetCurve[idx][k];
+        g_gndSpdScale = g_presetScale[idx];
+        g_gndSpdOn = 1;
+        g_gndCurveKey = (LONG)(idx + 1);
+        return;
+    }
+    g_gndOn        = g_presetOn[idx] ? 1 : 0;
+    g_gndOptDeg    = g_presetOpt[idx];
+    g_gndFalloff   = g_presetFall[idx];
+    g_gndPostRatio = g_presetPost[idx];
+    g_gndBend      = g_presetBend[idx];
+    g_gndSatK      = g_presetSatK[idx];
+    g_gndDampMovePct = g_presetDamp[idx];
+    g_gndDampSlip    = g_presetDSlip[idx];
+    g_gndCentreK     = g_presetCK[idx];
+    if (g_gndCentreK < 0)   g_gndCentreK = 0;
+    if (g_gndCentreK > 400) g_gndCentreK = 400;
+    if (g_gndDampMovePct < 0)   g_gndDampMovePct = 0;
+    if (g_gndDampMovePct > 200) g_gndDampMovePct = 200;
+    if (g_gndDampSlip < 0)      g_gndDampSlip = 0;
+    if (g_gndDampSlip > 100)    g_gndDampSlip = 100;
+    if (g_gndOptDeg < 1)        g_gndOptDeg = 1;
+    if (g_gndOptDeg > 45)       g_gndOptDeg = 45;
+    if (g_gndFalloff < 0)       g_gndFalloff = 0;
+    if (g_gndFalloff > 100)     g_gndFalloff = 100;
+    if (g_gndPostRatio < 110)   g_gndPostRatio = 110;
+    if (g_gndPostRatio > 600)   g_gndPostRatio = 600;
+    if (g_gndBend < 100)        g_gndBend = 100;
+    if (g_gndBend > 200)        g_gndBend = 200;
+    if (g_gndSatK < 0)          g_gndSatK = 0;
+    /* v825: 4x his reference (31500), not 20000 - see SLIDER_MAX_PCT. Bench presets only; the
+       player's ground_sat_k never comes through here, and no preset in the bank is near either. */
+    if (g_gndSatK > HEADROOM(GND_REF_SAT_K)) g_gndSatK = HEADROOM(GND_REF_SAT_K);
+    /* THE OTHER AXIS SURVIVES A BREAKAWAY PRESS. F5 (the reference) clears it instead, so it
+       stays the preset he has been comparing against. A rung is "a breakaway rung" by carrying
+       an opt of its own and no return - the same test the ini tables are built on. */
+    if (idx == 4) {
+        g_curRetK  = 0;
+        g_curBreak = 0;
+    } else {
+        g_curBreak = (LONG)(idx + 1);
+        if (g_curRetK > 0) {
+            g_gndCentreK = 0;
+            g_gndBend    = 100;
+            g_gndSatK    = g_curRetK * g_gndOptDeg;
+            if (g_gndSatK > HEADROOM(GND_REF_SAT_K)) g_gndSatK = HEADROOM(GND_REF_SAT_K);
+        }
+    }
+}
+
+static void GroundReadIni(void)
+{
+    char ini[MAX_PATH];
+    FFBIniPath(ini);
+    g_gndOn      = (LONG)GetPrivateProfileIntA("ffb", "ground", 1, ini);
+    /* THE FEEDBACK MODE, the utility's selector of 2026-09-14. `ffb_mode` is one choice where
+       there used to be a flag, because three things can drive the wheel and only two of them can
+       be told apart by `ground`:
+           0 = this road model      -> ground on
+           1 = legacy, i.e. v7.67   -> ground off
+           2 = the game's developers' own feedback, which this module does not compute at all
+       ABSENT ON PURPOSE MEANS NOTHING CHANGES: the key defaults to -1, and at -1 `ground` alone
+       decides exactly as it did before, so every ini already on a bench or in a player's folder
+       keeps its behaviour to the byte. A value this build does not know is ignored the same way
+       rather than silently picking a mode.
+       Mode 2 is a different code path chosen before the game creates its device, so it is read
+       here only to be REPORTED and to keep our own forces out of the way; the utility says a
+       restart is needed and this is why. */
+    {
+        /* GetPrivateProfileInt returns UINT, so the "absent" sentinel is read as a LONG and
+           compared to -1 - a `< 0` test on the raw return can never be true, which this project
+           has already paid for once (memory\truck-damper-sliders.md). */
+        LONG m = (LONG)GetPrivateProfileIntA("ffb", "ffb_mode", (UINT)-1, ini);
+        if (m == 0)                 g_gndOn = 1;   /* this road model */
+        else if (m == 1 || m == 2)  g_gndOn = 0;   /* legacy, or the developers' own */
+        if (m != -1 && m != g_ffbMode) {
+            /* 0x38, not 0x31: 0x31 is the preset's damper half (v7.92). */
+            Log(K_INIT, 0x38, (DWORD)g_ffbMode, (DWORD)m, (DWORD)g_gndOn);
+            g_ffbMode = m;
+        }
+    }
+    /* v815. 1 = notice when the game hands the actor a DIFFERENT vehicle object and re-resolve;
+       0 = keep the v814 behaviour, which holds the old object for as long as it still looks like
+       a car. See VehHunt. A force, in the sense that it decides whether the wheel is alive after
+       a level restart, so it is switchable and its default is written down rather than assumed. */
+    g_gndRevalidate = (LONG)GetPrivateProfileIntA("ffb", "ground_revalidate", 1, ini);
+    g_gndGate    = (LONG)GetPrivateProfileIntA("ffb", "ground_gate", 1, ini);
+    g_gndSat     = (LONG)GetPrivateProfileIntA("ffb", "ground_sat", 1, ini);
+    g_gndDetail  = (LONG)GetPrivateProfileIntA("ffb", "ground_detail", 1, ini);
+    /* v7.95b: the baked defaults ARE the reference pair now - F3 + U, 9 degrees of breakaway and
+   875 of return, which is 7875 at the peak. The verdict on ours-027: f3 and U are the reference,
+   better than f5 before. An ini that is silent should give the approved wheel, not the
+   feel that was current when the key was first added. */
+    /* No clamp, and v825 keeps it that way: the utility's weight row writes up to 4x (31500). */
+    g_gndSatK    = (LONG)GetPrivateProfileIntA("ffb", "ground_sat_k", GND_REF_SAT_K, ini);
+    g_gndOptDeg  = (LONG)GetPrivateProfileIntA("ffb", "ground_opt_deg", 9, ini);
+    g_gndFalloff = (LONG)GetPrivateProfileIntA("ffb", "ground_falloff_pct", 0, ini);
+    if (g_gndFalloff < 0)   g_gndFalloff = 0;
+    if (g_gndFalloff > 100) g_gndFalloff = 100;
+    g_gndPostRatio = (LONG)GetPrivateProfileIntA("ffb", "ground_post_ratio_pct", 170, ini);
+    if (g_gndPostRatio < 110) g_gndPostRatio = 110;
+    if (g_gndPostRatio > 600) g_gndPostRatio = 600;
+    g_gndDampSlip = (LONG)GetPrivateProfileIntA("ffb", "ground_damp_slip", 78, ini);
+    /* v811 - see g_gndDampGripMode for the measurement these two came out of. The mode ships at 1
+       (the tyre holds below the peak); 0 restores the arithmetic every drive up to v810 was judged
+       on, so the approved feel can be gone back to in one key. The standstill damper ships at 0,
+       which means "do not intervene" - the J bank is a tuning knob, not a shipped number, and with
+       the mode fixed a parked car lands on its own 20000 again. */
+    g_gndDampGripMode = (LONG)GetPrivateProfileIntA("ffb", "ground_damp_grip_mode", 0, ini);
+    if (g_gndDampGripMode) g_gndDampGripMode = 1;
+    g_gndDampStand = (LONG)GetPrivateProfileIntA("ffb", "ground_damp_stand", GND_REF_DAMP_STAND, ini);
+    if (g_gndDampStand < 0)     g_gndDampStand = 0;
+    /* v825: 4x his 6000 (24000), not 20000 - the utility's parking damper goes to 400%. */
+    if (g_gndDampStand > HEADROOM(GND_REF_DAMP_STAND)) g_gndDampStand = HEADROOM(GND_REF_DAMP_STAND);
+    /* v821: default 70 with the 70/90 ramp below - F6, his reference - and it must equal the
+       initializer. (v818..v820: 100, the original, which F4 still carries.) */
+    g_crashTrimPct = (LONG)GetPrivateProfileIntA("ffb", "crash_trim_pct", 70, ini);
+    if (g_crashTrimPct < 10)  g_crashTrimPct = 10;
+    if (g_crashTrimPct > 200) g_crashTrimPct = 200;
+    g_crashCap = (LONG)GetPrivateProfileIntA("ffb", "crash_cap", MAX_MAG, ini);
+    if (g_crashCap < 2000)    g_crashCap = 2000;
+    if (g_crashCap > MAX_MAG) g_crashCap = MAX_MAG;
+    /* v820: the crash trim's speed ramp, true km/h. 0/0 = no ramp: the flat trim above, exactly
+       as every build before v820 - so an ini without these keys changes nothing. */
+    g_crashRampLo = (LONG)GetPrivateProfileIntA("ffb", "crash_ramp_lo_kmh", 70, ini);
+    g_crashRampHi = (LONG)GetPrivateProfileIntA("ffb", "crash_ramp_hi_kmh", 90, ini);
+    if (g_crashRampLo < 0 || g_crashRampLo > 300) g_crashRampLo = 0;
+    if (g_crashRampHi < 0 || g_crashRampHi > 300) g_crashRampHi = 0;
+    /* v820: default 38 - his roll reference after ours-037, and it must equal the initializer. */
+    g_rollGainPct = (LONG)GetPrivateProfileIntA("ffb", "road_roll_gain_pct", 38, ini);
+    if (g_rollGainPct < 0)   g_rollGainPct = 0;
+    if (g_rollGainPct > 300) g_rollGainPct = 300;
+    g_rollCap = (LONG)GetPrivateProfileIntA("ffb", "road_roll_cap", ROAD_REF_ROLL_CAP, ini);
+    if (g_rollCap < 100)   g_rollCap = 100;
+    /* v825: 4x his 3000 (12000), not 10000. The `road` slider multiplies AFTER this cap, so it
+       scales it already; this is for a file that raises the cap itself. */
+    if (g_rollCap > HEADROOM(ROAD_REF_ROLL_CAP)) g_rollCap = HEADROOM(ROAD_REF_ROLL_CAP);
+    g_rollKeys = (LONG)GetPrivateProfileIntA("ffb", "road_roll_keys", 1, ini);
+    if (g_rollKeys) g_rollKeys = 1;
+    g_crashKeys = (LONG)GetPrivateProfileIntA("ffb", "crash_keys", 1, ini);
+    if (g_crashKeys) g_crashKeys = 1;
+    /* v822: the debug range keys take F1..F5, so both banks give theirs up (see g_rangeKeys) */
+    g_rangeKeys = (LONG)GetPrivateProfileIntA("ffb", "range_keys", 0, ini);
+    if (g_rangeKeys) { g_rangeKeys = 1; g_rollKeys = 0; g_crashKeys = 0; }
+    /* v814: the two banks' keys win over the file for the rest of the session - see
+       g_rollKeyUsed. Without this the once-a-second re-read undoes his choice one second after
+       he makes it, and the log still reports the state he chose. */
+    if (g_rollKeyUsed) {
+        g_rollGainPct = g_rollBankGain[g_rollPresetCur - 1];
+        g_rollCap     = g_rollBankCap[g_rollPresetCur - 1];
+    }
+    if (g_crashKeyUsed) {
+        g_crashTrimPct = g_crashBankTrim[g_crashPresetCur - 1];
+        g_crashCap     = g_crashBankCap[g_crashPresetCur - 1];
+        g_crashRampLo  = g_crashBankRampLo[g_crashPresetCur - 1];
+        g_crashRampHi  = g_crashBankRampHi[g_crashPresetCur - 1];
+    }
+    g_gndDampKeys = (LONG)GetPrivateProfileIntA("ffb", "ground_damp_keys", 0, ini);
+    if (g_gndDampKeys) g_gndDampKeys = 1;
+    g_gndDampMoveAbs = (LONG)GetPrivateProfileIntA("ffb", "ground_damp_move_abs", 0, ini);
+    if (g_gndDampMoveAbs < 0)     g_gndDampMoveAbs = 0;
+    if (g_gndDampMoveAbs > 20000) g_gndDampMoveAbs = 20000;
+    g_gndCentreK  = (LONG)GetPrivateProfileIntA("ffb", "ground_centre_k", 0, ini);
+    if (g_gndCentreK < 0)   g_gndCentreK = 0;
+    if (g_gndCentreK > 400) g_gndCentreK = 400;
+    if (g_gndDampSlip < 0)   g_gndDampSlip = 0;
+    if (g_gndDampSlip > 100) g_gndDampSlip = 100;
+    g_gndBend = (LONG)GetPrivateProfileIntA("ffb", "ground_curve_bend", 100, ini);
+    if (g_gndBend < 100) g_gndBend = 100;
+    if (g_gndBend > 200) g_gndBend = 200;
+    /* 0 and 100, not GTA MT's 50 and 200: the aligning torque does not wait for 7 km/h, and the
+       measurement that settled it is in this file above g_gndCasterK. */
+    g_gndVmin    = (LONG)GetPrivateProfileIntA("ffb", "ground_v_min_cms", 0, ini);
+    g_gndVfull   = (LONG)GetPrivateProfileIntA("ffb", "ground_v_full_cms", 100, ini);
+    g_gndDetailK = (LONG)GetPrivateProfileIntA("ffb", "ground_detail_k", GND_REF_DETAIL_K, ini);
+    /* theirs: DetailLim 5000 and DetailMAW 3. The window is bounded at GND_MAW_MAX because it is
+       a fixed array in the FFB thread's frame, which has no room to grow. */
+    g_gndDetailLim = (LONG)GetPrivateProfileIntA("ffb", "ground_detail_lim", GND_REF_DETAIL_LIM, ini);
+    if (g_gndDetailLim < 0)     g_gndDetailLim = 0;
+    /* v825: 4x his 5000 (20000), not 10000 - the texture row writes gain and limit together, and
+       a limit that stopped at 2x would turn the top half of that slider into a cut. */
+    if (g_gndDetailLim > HEADROOM(GND_REF_DETAIL_LIM)) g_gndDetailLim = HEADROOM(GND_REF_DETAIL_LIM);
+    g_gndDetailMaw = (LONG)GetPrivateProfileIntA("ffb", "ground_detail_maw", 3, ini);
+    if (g_gndDetailMaw < 1)           g_gndDetailMaw = 1;
+    if (g_gndDetailMaw > GND_MAW_MAX) g_gndDetailMaw = GND_MAW_MAX;
+    /* The spike row's threshold, in force units of step between two ticks. 1500 is about a
+       seventh of the wheel's full scale and well above the model's ordinary breathing on a city
+       street; it is deliberately not derived from ground_slew, because the question is what the
+       wheel DID, not what it was allowed to do. */
+    g_gndSpike = (LONG)GetPrivateProfileIntA("ffb", "ground_spike", 1500, ini);
+    if (g_gndSpike < 0)     g_gndSpike = 0;
+    if (g_gndSpike > 10000) g_gndSpike = 10000;
+    g_gndSignBand = (LONG)GetPrivateProfileIntA("ffb", "ground_sign_band", 30, ini);
+    if (g_gndSignBand < 0)   g_gndSignBand = 0;
+    if (g_gndSignBand > 500) g_gndSignBand = 500;
+    /* v7.96: the speed curve's six anchors, re-read every second like everything else here. */
+    {
+        static const LONG dflV[GND_SPD_PTS] = { 10, 20, 30, 50, 60, 70, 80, 110 };
+        /* v817: the half - must equal g_gndSpdM's initializer, or a silent ini gives a different
+           wheel from the one the module starts with. */
+        static const LONG dflM[GND_SPD_PTS] = { 22, 34, 42, 60, 80, 100, 122, 190 };
+        /* "ground_spd1_kmh" / "ground_spd1_pct", built by hand: this module links -nostdlib and
+           has no sprintf, and the digit is the only part that moves. */
+        char nm[20] = "ground_spd0_kmh";
+        int i;
+        g_gndSpdOn = (LONG)GetPrivateProfileIntA("ffb", "ground_spd_curve", 1, ini);
+        for (i = 0; i < GND_SPD_PTS; i++) {
+            nm[10] = (char)('1' + i);
+            nm[12] = 'k'; nm[13] = 'm'; nm[14] = 'h'; nm[15] = 0;
+            g_gndSpdV[i] = (LONG)GetPrivateProfileIntA("ffb", nm, dflV[i], ini);
+            nm[12] = 'p'; nm[13] = 'c'; nm[14] = 't'; nm[15] = 0;
+            g_gndSpdM[i] = (LONG)GetPrivateProfileIntA("ffb", nm, dflM[i], ini);
+            if (g_gndSpdV[i] < 0)    g_gndSpdV[i] = 0;
+            if (g_gndSpdV[i] > 400)  g_gndSpdV[i] = 400;
+            if (g_gndSpdM[i] < 0)    g_gndSpdM[i] = 0;
+            if (g_gndSpdM[i] > 400)  g_gndSpdM[i] = 400;
+        }
+    }
+    g_gndStaleTicks = (LONG)GetPrivateProfileIntA("ffb", "ground_stale_ticks", 20, ini);
+    if (g_gndStaleTicks < 0)    g_gndStaleTicks = 0;
+    if (g_gndStaleTicks > 1000) g_gndStaleTicks = 1000;
+    /* NOT ground keys, and they are read here because this is the one function that re-reads the
+       ini every second - so a wheel that has been taken away can be given a different recovery
+       policy without a rebuild, which is the situation where a rebuild is least convenient. */
+    g_recoverMs    = (LONG)GetPrivateProfileIntA("ffb", "ffb_recover_ms", 2000, ini);
+    if (g_recoverMs < 0)      g_recoverMs = 0;
+    if (g_recoverMs > 60000)  g_recoverMs = 60000;
+    g_recoverAfter = (LONG)GetPrivateProfileIntA("ffb", "ffb_recover_after", 8, ini);
+    if (g_recoverAfter < 1)    g_recoverAfter = 1;
+    if (g_recoverAfter > 1000) g_recoverAfter = 1000;
+    g_gndTauMs   = (LONG)GetPrivateProfileIntA("ffb", "ground_tau_ms", 40, ini);
+    g_gndSlew    = (LONG)GetPrivateProfileIntA("ffb", "ground_slew", 40000, ini);
+    g_gndInvert  = (LONG)GetPrivateProfileIntA("ffb", "ground_invert", 0, ini);
+    g_gndLog     = (LONG)GetPrivateProfileIntA("ffb", "ground_log", 1, ini);
+    /* v7.8: the model's own settings. `ground_sat_k` rises from 4000 because SAT now replaces the
+       spring's 4500 plus its 2250 highway term - it is the only centring force left. */
+    g_gndAlphaMode    = (LONG)GetPrivateProfileIntA("ffb", "ground_alpha_mode", 0, ini);
+    g_gndAyGain       = (LONG)GetPrivateProfileIntA("ffb", "ground_ay_gain", 100, ini);
+    g_gndFrontAxleCm  = (LONG)GetPrivateProfileIntA("ffb", "ground_front_axle_cm", 130, ini);
+    g_gndDampMovePct  = (LONG)GetPrivateProfileIntA("ffb", "ground_damp_move_pct", 50, ini);
+    /* v7.90: 500 -> 250 on request, 2026-09-13: the damper when the wheels are in the air... can be
+       halved again. If it is currently 500, set it to around 250. The floor exists
+       only so the wheel does not spin freely in the air; he has now judged 500 twice. */
+    g_gndDampAir      = (LONG)GetPrivateProfileIntA("ffb", "ground_damp_air", 250, ini);
+    if (g_gndDampAir < 0)     g_gndDampAir = 0;
+    if (g_gndDampAir > 20000) g_gndDampAir = 20000;
+    g_gndLong         = (LONG)GetPrivateProfileIntA("ffb", "ground_long", 1, ini);
+    g_gndLongFloor    = (LONG)GetPrivateProfileIntA("ffb", "ground_long_floor", 20, ini);
+    g_gndLongTauMs    = (LONG)GetPrivateProfileIntA("ffb", "ground_long_tau_ms", 120, ini);
+    g_gndSlipSrc      = (LONG)GetPrivateProfileIntA("ffb", "ground_slip_src", 0, ini);
+    if (g_gndLongFloor < 0)    g_gndLongFloor = 0;
+    if (g_gndLongFloor > 100)  g_gndLongFloor = 100;
+    if (g_gndLongTauMs < 0)    g_gndLongTauMs = 0;
+    if (g_gndLongTauMs > 2000) g_gndLongTauMs = 2000;
+    if (g_gndSlipSrc < 0 || g_gndSlipSrc > 3) g_gndSlipSrc = 0;
+    g_gndCentreMs     = (LONG)GetPrivateProfileIntA("ffb", "ground_centre_ms", 0, ini);
+    if (g_gndCentreMs < 0)     g_gndCentreMs = 0;
+    if (g_gndCentreMs > 10000) g_gndCentreMs = 10000;
+    g_gndHoldCentre   = (LONG)GetPrivateProfileIntA("ffb", "ground_hold_centre", 0, ini);
+    g_gndSelfTest     = (LONG)GetPrivateProfileIntA("ffb", "ground_selftest", 0, ini);
+    g_gndSelfMag      = (LONG)GetPrivateProfileIntA("ffb", "ground_selftest_mag", 5000, ini);
+    if (g_gndSelfTest < 0)    g_gndSelfTest = 0;
+    if (g_gndSelfTest > 10)   g_gndSelfTest = 10;
+    if (g_gndSelfMag < 0)     g_gndSelfMag = 0;
+    if (g_gndSelfMag > 10000) g_gndSelfMag = 10000;
+    g_gndCasterK      = (LONG)GetPrivateProfileIntA("ffb", "ground_caster_k", GND_REF_CASTER_K, ini);
+    g_gndCasterExp    = (LONG)GetPrivateProfileIntA("ffb", "ground_caster_exp", 200, ini);
+    if (g_gndCasterExp < 100) g_gndCasterExp = 100;
+    if (g_gndCasterExp > 300) g_gndCasterExp = 300;
+    g_gndCasterD      = (LONG)GetPrivateProfileIntA("ffb", "ground_caster_d", 600, ini);
+    if (g_gndCasterD < 0)     g_gndCasterD = 0;
+    if (g_gndCasterD > 10000) g_gndCasterD = 10000;
+    g_gndCasterVcms   = (LONG)GetPrivateProfileIntA("ffb", "ground_caster_v_cms", 40, ini);
+    if (g_gndCasterK < 0)       g_gndCasterK = 0;
+    /* v825: 10000 already admits 4x his 2400 (9600), the most the weight row writes. */
+    if (g_gndCasterK > 10000)   g_gndCasterK = 10000;
+    if (g_gndCasterVcms < 5)    g_gndCasterVcms = 5;
+    if (g_gndCasterVcms > 1000) g_gndCasterVcms = 1000;
+    if (g_gndAlphaMode < 0 || g_gndAlphaMode > 2) g_gndAlphaMode = 0;
+    if (g_gndAyGain < 0)        g_gndAyGain = 0;
+    if (g_gndAyGain > 400)      g_gndAyGain = 400;
+    if (g_gndFrontAxleCm < 30)  g_gndFrontAxleCm = 30;
+    if (g_gndFrontAxleCm > 400) g_gndFrontAxleCm = 400;
+    if (g_gndDampMovePct < 0)   g_gndDampMovePct = 0;
+    /* v825: 200 is exactly 4x his 50 - the driving damper row at 400% writes 200 and it passes. */
+    if (g_gndDampMovePct > 200) g_gndDampMovePct = 200;
+    /* v7.94: G and N, not I and O. The letter ladder took I and O, and a key that selects a
+       preset AND toggles the whole channel is a control nobody can aim. G and N are both in the
+       set the game's own defaults leave alone (docs\KEY-MAP.md).
+       v825: 0 = no key - see HotkeyVk. */
+    g_gndKeyOn   = HotkeyVk((LONG)GetPrivateProfileIntA("ffb", "ground_key_on",  0x47, ini), 0x47);
+    g_gndKeyOff  = HotkeyVk((LONG)GetPrivateProfileIntA("ffb", "ground_key_off", 0x4E, ini), 0x4E);
+    g_gndAckMag  = (LONG)GetPrivateProfileIntA("ffb", "ground_ack", 4000, ini);
+    /* A nonsense VK is not a control, and two keys that are the SAME key is a toggle again -
+       which is the thing he just rejected. Both fall back rather than being half-honoured.
+       Two keys of 0 are not "the same key": they are no key twice, and they stay 0. */
+    if (g_gndKeyOn != 0 && g_gndKeyOn == g_gndKeyOff) { g_gndKeyOn = 0x47; g_gndKeyOff = 0x4E; }
+    if (g_gndAckMag < 0) g_gndAckMag = 0;
+    if (g_gndAckMag > 8000) g_gndAckMag = 8000;
+    /* ---- the preset bank, read every second so a preset can be retuned while he drives ---- */
+    {
+        static const LONG dflKey[GND_PRESETS]  = { 0x70, 0x71, 0x72, 0x73, 0x74,
+                                                   0x55, 0x49, 0x4F, 0x50 };
+        static const LONG dflOn[GND_PRESETS]   = { 1, 1, 1, 1, 1, 1, 1, 1, 1 };
+        static const LONG dflOpt[GND_PRESETS]  = { 9, 9, 9, 9, 4, 9, 9, 9, 9 };
+        static const LONG dflFall[GND_PRESETS] = { 0,  0,  0,  0,  0, 0,  0,  0,  0  };
+        static const LONG dflPost[GND_PRESETS] = { 170, 170, 170, 170, 300, 170, 170, 170, 170 };
+        static const LONG dflBend[GND_PRESETS] = { 100, 100, 100, 100, 130, 100, 100, 100, 100 };
+        static const LONG dflSatK[GND_PRESETS] = { 7875, 7875, 7875, 7875, 5000,
+                                                   7875, 7875, 7875, 7875 };
+        static const LONG dflDamp[GND_PRESETS]  = { 50, 50, 50, 50, 50, 50, 50, 50, 50 };
+        static const LONG dflDSlip[GND_PRESETS] = { 78, 78, 78, 78, 0, 78, 78, 78, 78 };
+        static const LONG dflCK[GND_PRESETS]    = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+        static const LONG dflRet[GND_PRESETS]   = { 875, 875, 875, 875, 0, 0, 0, 0, 0 };
+        static const LONG dflScale[GND_PRESETS] = { 100, 100, 100, 100, 100, 100, 100, 100, 100 };
+        static const LONG dflIsCur[GND_PRESETS] = { 0, 0, 0, 0, 0, 1, 1, 1, 0 };
+        char nm[40];
+        int i;
+        for (i = 0; i < GND_PRESETS; i++) {
+            PresetKeyName(nm, i, "_key");
+            /* A key of 0 must never reach GetAsyncKeyState - that is how a retired control comes
+               back as a phantom press (docs\KEY-MAP.md). v825: and a 0 is NO KEY, not the default
+               key - see HotkeyVk. PollPresetKeys skips it, so it never reaches the keyboard. */
+            g_presetKey[i]  = HotkeyVk((LONG)GetPrivateProfileIntA("ffb", nm, dflKey[i], ini),
+                                       dflKey[i]);
+            PresetKeyName(nm, i, "_ground");
+            g_presetOn[i]   = (LONG)GetPrivateProfileIntA("ffb", nm, dflOn[i], ini);
+            PresetKeyName(nm, i, "_opt_deg");
+            g_presetOpt[i]  = (LONG)GetPrivateProfileIntA("ffb", nm, dflOpt[i], ini);
+            PresetKeyName(nm, i, "_falloff_pct");
+            g_presetFall[i] = (LONG)GetPrivateProfileIntA("ffb", nm, dflFall[i], ini);
+            PresetKeyName(nm, i, "_post_ratio_pct");
+            g_presetPost[i] = (LONG)GetPrivateProfileIntA("ffb", nm, dflPost[i], ini);
+            PresetKeyName(nm, i, "_curve_bend");
+            g_presetBend[i] = (LONG)GetPrivateProfileIntA("ffb", nm, dflBend[i], ini);
+            PresetKeyName(nm, i, "_sat_k");
+            g_presetSatK[i] = (LONG)GetPrivateProfileIntA("ffb", nm, dflSatK[i], ini);
+            PresetKeyName(nm, i, "_damp_pct");
+            g_presetDamp[i] = (LONG)GetPrivateProfileIntA("ffb", nm, dflDamp[i], ini);
+            PresetKeyName(nm, i, "_damp_slip");
+            g_presetDSlip[i] = (LONG)GetPrivateProfileIntA("ffb", nm, dflDSlip[i], ini);
+            PresetKeyName(nm, i, "_centre_k");
+            g_presetCK[i] = (LONG)GetPrivateProfileIntA("ffb", nm, dflCK[i], ini);
+            PresetKeyName(nm, i, "_is_curve");
+            g_presetIsCurve[i] = (LONG)GetPrivateProfileIntA("ffb", nm, dflIsCur[i], ini);
+            {   /* the curve's own six anchors: preset6_spd1_pct .. preset7_spd6_pct */
+                char cn[24] = "preset0_spd0_pct";
+                int q;
+                cn[6] = (char)('1' + i);
+                for (q = 0; q < GND_SPD_PTS; q++) {
+                    cn[11] = (char)('1' + q);
+                    g_presetCurve[i][q] = (LONG)GetPrivateProfileIntA("ffb", cn,
+                                              (DWORD)g_presetCurve[i][q], ini);
+                    if (g_presetCurve[i][q] < 0)   g_presetCurve[i][q] = 0;
+                    if (g_presetCurve[i][q] > 400) g_presetCurve[i][q] = 400;
+                }
+            }
+            PresetKeyName(nm, i, "_spd_scale");
+            /* Percent, so it is never negative and the UINT trap that made the arming tool refuse
+               v7.97 cannot come back ([[truck-damper-sliders]]). 100 = the approved curve. */
+            g_presetScale[i] = (LONG)GetPrivateProfileIntA("ffb", nm, dflScale[i], ini);
+            if (g_presetScale[i] < 20)  g_presetScale[i] = 20;
+            if (g_presetScale[i] > 300) g_presetScale[i] = 300;
+            PresetKeyName(nm, i, "_return_k");
+            g_presetRet[i] = (LONG)GetPrivateProfileIntA("ffb", nm, dflRet[i], ini);
+            if (g_presetRet[i] < 0)     g_presetRet[i] = 0;
+            if (g_presetRet[i] > 4000)  g_presetRet[i] = 4000;
+        }
+        /* Two keys that are the same key are one key nobody can aim: fall the pair back rather
+           than half-honour them, exactly as ground_key_on / _off do above. v825: two zeros are no
+           key twice, not one key twice - a player's ini carries nine of them. */
+        for (i = 1; i < GND_PRESETS; i++) {
+            int j;
+            for (j = 0; j < i; j++)
+                if (g_presetKey[i] != 0 && g_presetKey[i] == g_presetKey[j]) { g_presetKey[i] = dflKey[i]; g_presetKey[j] = dflKey[j]; }
+        }
+    }
+    /* A preset he has selected outranks the plain ground_* keys in the same file, for the same
+       reason the override line below exists. Before the override line, so that pressing O still
+       silences the channel after a preset press. */
+    if (g_presetCur >= 1) PresetApply((int)g_presetCur - 1);
+    /* The key wins over the file for the rest of the session. Without this the ini re-read one
+       second later would silently undo his A/B switch, and the log would still say "on". */
+    if (g_gndOverride >= 0) g_gndOn = g_gndOverride;
+    /* v811: and the same for the damper ladders - see g_dampKeyUsed. */
+    if (g_dampKeyUsed) {
+        g_gndDampGripMode = g_dampKeepMode;
+        g_gndDampMoveAbs  = g_dampKeepAbs;
+        g_gndDampStand    = g_dampKeepStand;
+    }
+    if (g_gndOptDeg < 1) g_gndOptDeg = 1;
+    if (g_gndVfull <= g_gndVmin) g_gndVfull = g_gndVmin + 1;
+    if (g_gndFalloff < 0)   g_gndFalloff = 0;
+    if (g_gndFalloff > 100) g_gndFalloff = 100;
+}
+
+/* ---- the tyre load, per axle, from the fields the game's own FFB multiplies by ---------------- */
+typedef struct {
+    float loadAll;        /* the stock game's L - every wheel over the car's weight            */
+    float loadFront;      /* GTA MT's weightFactor input - the FRONT axle over its design load */
+    float suspFL, suspFR; /* front suspension lengths, for the left-right detail differential   */
+    DWORD planted;        /* one bit per wheel, clear = in the air                              */
+    int   n;
+    int   haveSusp;
+    /* ---- THE ENGINE'S OWN TYRE STATE, found in the decompilation 2026-09-13 ------------------
+       Every one of these is written by the tyre solver at 0x004E2090 every tick, and they are
+       the quantities GTA MT gets handed by GTA's physics and we believed we had to estimate. */
+    float sinSlipF;       /* sin of the front axle's slip angle, SIGNED BY US - wheel+0x108     */
+    float deltaF;         /* the steering angle, from the wheel's own forward vector vs the body */
+    DWORD flagsF;         /* the steered wheels' state bits OR-ed: 0x10 squeal, 0x20 locked,
+                             0x80 wheelspin - cleared and rewritten by the solver every tick    */
+    int   nSteer;         /* how many steered wheels answered; 0 = this car has none we can read */
+} GNDSTATE;
+
+static int GroundRead(DWORD veh, GNDSTATE *g)
+{
+    DWORD arr = 0, w, flags;
+    int n = 0, i, haveAxes;
+    float sum = 0.0f, front = 0.0f, mass = 0.0f, grav = 0.0f, nf, mu, len, denom;
+    float fwd[3], rgt[3];
+    g->loadAll = g->loadFront = 0.0f;
+    g->planted = 0; g->n = 0; g->haveSusp = 0;
+    g->sinSlipF = g->deltaF = 0.0f; g->flagsF = 0; g->nSteer = 0;
+    if (!veh) return 0;
+    if (!SafeReadD(veh + 0x534u, (DWORD *)&n) || n <= 0 || n > 8)      return 0;
+    if (!SafeReadD(veh + 0xCA8u, &arr) || !Sane(arr))                  return 0;
+    if (!SafeReadF(veh + 0x664u, &mass) || mass <= 0.0f)               return 0;
+    if (!SafeReadF(veh + 0x50Cu, &grav) || grav == 0.0f)               return 0;
+    haveAxes = SafeReadF(veh + 0x0CACu, &fwd[0]) && SafeReadF(veh + 0x0CB0u, &fwd[1]) &&
+               SafeReadF(veh + 0x0CB4u, &fwd[2]) && SafeReadF(veh + 0x0CB8u, &rgt[0]) &&
+               SafeReadF(veh + 0x0CBCu, &rgt[1]) && SafeReadF(veh + 0x0CC0u, &rgt[2]);
+    for (i = 0; i < n; i++) {
+        if (!SafeReadD(arr + (DWORD)i * 4u, &w) || !Sane(w))           return 0;
+        if (!SafeReadD(w + 0x120u, &flags))                            return 0;
+        if (flags & 0x40000000u) continue;         /* destroyed - the game skips it, so do we */
+        if (!SafeReadF(w + 0x90u, &nf) || !SafeReadF(w + 0xDCu, &mu))  return 0;
+        if (mu <= 0.0f || mu > 100.0f)                                 return 0;
+        if (flags & 0x8u) g->planted |= (DWORD)1 << i;
+        sum += mu * nf;
+        if (i < 2) front += mu * nf;               /* L,R per axle: 0 and 1 are the front pair */
+        if (i < 2 && SafeReadF(w + 0x94u, &len)) { /* previous suspension length, per wheel   */
+            if (i == 0) g->suspFL = len; else g->suspFR = len;
+            g->haveSusp = 1;
+        }
+        /* ---- THE STEERED WHEEL'S OWN SLIP, as the engine measured it this tick --------------
+           Flag 0x1 is set by the car loader for a steered wheel, so this asks the game which
+           wheels steer instead of assuming the first two. `wheel+0x108` is sin(slip angle),
+           written from the angle between the contact-point velocity and the wheel's forward
+           vector - the same construction GTA MT's CalculateSlipInfo uses, only already done.
+           It is stored UNSIGNED, so the sign comes from which way the contact patch is sliding
+           across the car. */
+        if ((flags & 0x1u) && haveAxes) {
+            float wf[3], cv[3], s = 0.0f, lat, cosd, sind;
+            if (SafeReadF(w + 0x108u, &s) &&
+                SafeReadF(w + 0x58u, &wf[0]) && SafeReadF(w + 0x5Cu, &wf[1]) &&
+                SafeReadF(w + 0x60u, &wf[2]) &&
+                SafeReadF(w + 0x4Cu, &cv[0]) && SafeReadF(w + 0x50u, &cv[1]) &&
+                SafeReadF(w + 0x54u, &cv[2])) {
+                if (s < 0.0f) s = -s;
+                if (s > 1.0f) s = 1.0f;
+                lat  = cv[0] * rgt[0] + cv[1] * rgt[1] + cv[2] * rgt[2];
+                if (lat < 0.0f) s = -s;
+                /* The steering angle, measured rather than asked for: the wheel's forward vector
+                   is already steered by the time the solver reads it, so its angle against the
+                   body's forward axis IS the steering angle. This replaces `wheel+0x114`, which
+                   this project called the steering angle and which is nothing of the kind - it is
+                   the wheel's SPIN angle, integrated as distance over radius and wrapped at 2 pi
+                   (FUN_004de020). It moves whenever the car rolls, so the old "does this field
+                   move" liveness test would have said yes and fed a rolling angle into a slip
+                   estimate. */
+                cosd = wf[0] * fwd[0] + wf[1] * fwd[1] + wf[2] * fwd[2];
+                sind = wf[0] * rgt[0] + wf[1] * rgt[1] + wf[2] * rgt[2];
+                g->sinSlipF += s;
+                g->deltaF   += (cosd > 0.25f) ? (sind / cosd) : sind;
+                g->flagsF   |= flags;
+                g->nSteer++;
+            }
+        }
+    }
+    if (g->nSteer > 1) {
+        g->sinSlipF /= (float)g->nSteer;
+        g->deltaF   /= (float)g->nSteer;
+    }
+    if (sum   < 0.0f) sum   = 0.0f;
+    if (front < 0.0f) front = 0.0f;
+    denom = mass * grav * 1.1f;
+    if (denom <= 0.0f) return 0;
+    g->loadAll   = sum / denom;
+    g->loadFront = front / (denom * 0.5f);         /* the front axle's own share of the weight */
+    if (g->loadAll   > 1.0f) g->loadAll   = 1.0f;
+    if (g->loadFront > 1.0f) g->loadFront = 1.0f;
+    g->n = n;
+    return 1;
+}
+
+/* ================= THE HUNT: where IS the vehicle object, if the detour is dead ================
+ *
+ * Run 016 and the autotest that reproduced it both say the same thing: the detour on
+ * `0x0042F60C` is installed and never runs. So the vehicle pointer has to come from somewhere
+ * else, and rather than guess an offset we ask the running game.
+ *
+ * The test is a SIGNATURE, not an address: a vehicle is an object whose wheel count at +0x534 is
+ * 1..8, whose wheel array at +0xCA8 is a readable pointer, whose mass at +0x664 is positive and
+ * plausible, whose gravity at +0x50C is near 9.8, and whose first wheel has a readable normal
+ * force and grip. That is five independent fields agreeing - a random pointer does not pass it.
+ *
+ * WHY A SCAN AND NOT A LOOKUP. Run 014 was spent on an offset taken from the listing at 90%
+ * confidence, and it was the WRONG OBJECT: the chain we have always used reaches the player
+ * actor. A scan reports what is actually there, and it reports NOTHING when nothing is there,
+ * which is the answer we most need to be able to distinguish. */
+static int VehSigOK(DWORD p, int *outN, float *outMass)
+{
+    DWORD arr = 0, w = 0;
+    int n = 0;
+    float mass = 0.0f, grav = 0.0f, nf = 0.0f, mu = 0.0f;
+    if (!Sane(p)) return 0;
+    if (!SafeReadD(p + 0x534u, (DWORD *)&n) || n < 1 || n > 8)      return 0;
+    if (!SafeReadD(p + 0xCA8u, &arr) || !Sane(arr))                 return 0;
+    if (!SafeReadF(p + 0x664u, &mass) || mass < 50.0f || mass > 50000.0f) return 0;
+    if (!SafeReadF(p + 0x50Cu, &grav) || grav < 5.0f  || grav > 15.0f)    return 0;
+    if (!SafeReadD(arr, &w) || !Sane(w))                            return 0;
+    if (!SafeReadF(w + 0x90u, &nf) || !SafeReadF(w + 0xDCu, &mu))   return 0;
+    if (mu <= 0.0f || mu > 100.0f)                                  return 0;
+    if (outN)    *outN = n;
+    if (outMass) *outMass = mass;
+    return 1;
+}
+
+/* Walk the player actor for a pointer to something that passes the signature, and log where it
+   was found. 0x6D carries (offset, pointer, wheel count, mass x100); 0x6E is the "nothing found"
+   row and it is written EVERY time, because "no candidate" and "never looked" are different
+   claims and only one of them is a finding. */
+static DWORD g_vehFound = 0;
+/* WHERE the pointer we hold came from, so it can be re-read rather than re-guessed:
+   the offset inside the actor, 0xFFFFFFFF meaning "the actor itself", and the actor it was
+   found in. Both written whenever g_vehFound is adopted below. */
+static DWORD g_vehOff  = 0xFFFFFFFFu;
+static DWORD g_vehBase = 0;
+static void VehHunt(void)
+{
+    DWORD base = GetCarPtr();     /* the PLAYER ACTOR - the object our forces have always used */
+    DWORD off, p;
+    int n = 0, hits = 0;
+    float mass = 0.0f;
+
+    /* ---- HAS THE GAME SWAPPED THE CAR UNDER US? -----------------------------------------
+     * Measured twice: ours-025 ended with 55 s of exactly zero force after a level restart, and
+     * ours-034 carries three more windows of 4.0-4.5 s, each one frozen bit for bit at 49.15,
+     * 30.82 and 4.28 km/h ([[the-channel-keeps-reading-a-dead-car]]).
+     *
+     * The cause is the line below this block: it keeps the pointer as long as it still PASSES
+     * the signature, and a freed object in still-mapped memory keeps its wheel count, its mass
+     * and its gravity, so it passes for ever. The signature answers "is this a car", and the
+     * question that needed asking is "is this THE car the game is using now".
+     *
+     * So ask the game. We know where we got the pointer - the offset inside the actor, recorded
+     * when it was adopted - and reading it again costs one guarded read a second. If the value
+     * there has moved, the object we hold has been abandoned and the hunt below re-resolves it.
+     *
+     * NOT the stale flag as the trigger: a genuinely parked car is stale too, and that would be
+     * a rescan storm every time he stops at a kerb.
+     *
+     * A FALSE POSITIVE IS CHEAP AND THAT IS DELIBERATE: if the pointer has not really changed,
+     * the hunt below finds the same object again in the same place and nothing else happens. The
+     * failure mode of this check is a few milliseconds, not a wrong car.
+     *
+     * 0x37: a = the pointer we were holding, b = what sits there now (0 = the actor went away),
+     *       c = the offset it was read from, or the new actor when the actor itself changed.
+     *
+     * 0x37 AND NOT 0x33, which is what v815 shipped with. 0x33 is the speed-curve row, written
+     * EVERY SECOND since v7.96 - so the one question this row exists to answer ("did the check
+     * fire across the restart") could never have come back no. The card for ours-035 said
+     * "0x33 present = the swap was noticed", and it would have been present in every second of
+     * every drive. Caught 2026-09-30 before the drive, by listing every producer of each code
+     * rather than trusting the number to be free. */
+    if (g_gndRevalidate && g_vehFound) {
+        DWORD now = 0;
+        int   drop = 0;
+        if (base != g_vehBase) {
+            Log(K_INIT, 0x37, g_vehFound, 0, base);
+            drop = 1;
+        } else if (g_vehOff == 0xFFFFFFFFu) {
+            if (base != g_vehFound) { Log(K_INIT, 0x37, g_vehFound, base, g_vehOff); drop = 1; }
+        } else if (!SafeReadD(base + g_vehOff, &now) || now != g_vehFound) {
+            Log(K_INIT, 0x37, g_vehFound, now, g_vehOff);
+            drop = 1;
+        }
+        if (drop) { g_vehFound = 0; g_vehBase = 0; g_vehOff = 0xFFFFFFFFu; }
+    }
+
+    if (g_vehFound && VehSigOK(g_vehFound, &n, &mass)) return;   /* still good, nothing to do */
+    g_vehFound = 0;
+    if (!base) { Log(K_INIT, 0x6E, 0, 0, 0); return; }
+    /* the actor itself first - it costs nothing and settles the "two objects" question outright */
+    if (VehSigOK(base, &n, &mass)) {
+        g_vehFound = base; g_vehBase = base; g_vehOff = 0xFFFFFFFFu;
+        Log(K_INIT, 0x6D, 0xFFFFFFFFu, base, (DWORD)((n << 24) | (DWORD)(LONG)(mass * 100.0f)));
+        return;
+    }
+    for (off = 0; off < 0x4000u; off += 4u) {
+        if (!SafeReadD(base + off, &p)) continue;
+        if (!VehSigOK(p, &n, &mass)) continue;
+        if (hits == 0) { g_vehFound = p; g_vehBase = base; g_vehOff = off; }
+        Log(K_INIT, 0x6D, off, p, (DWORD)((n << 24) | (DWORD)(LONG)(mass * 100.0f)));
+        if (++hits >= 4) break;
+    }
+    if (!hits) Log(K_INIT, 0x6E, base, 0, 0);
+}
+
+/* ---- ARE WE READING THE RIGHT PLACES? The model's inputs, logged raw ------------------------
+ *
+ * His question, 2026-09-13: what of the GTA model do we not have. This answers the half that a
+ * listing cannot: whether the fields we believe in hold sane numbers in a live game.
+ *
+ * 0x6F pairs the two candidate vehicle pointers - the one our signature scan found at actor+0x58
+ * and the one the listing names at actor+0xE4 - with the steering angle and the steering lock.
+ * If those two pointers are equal, the scan and the listing agree and the question is closed.
+ *
+ * 0x1A carries the tyre-load arithmetic UNCLAMPED, because loadAll read a flat 1.000 all drive:
+ * a value pinned at its ceiling cannot express partial unloading, which is half of the empty
+ * wheel. Either the numerator is bigger than the listing implies or the denominator is wrong,
+ * and only the raw numbers say which. */
+static void LogModelInputs(void)
+{
+    DWORD actor = GetCarPtr(), v58 = 0, ve4 = 0, arr = 0, w = 0;
+    float steer = 0.0f, lock = 0.0f, mass = 0.0f, grav = 0.0f, nf = 0.0f, mu = 0.0f, sum = 0.0f;
+    int n = 0, i;
+    if (!actor) return;
+    SafeReadD(actor + 0x58u, &v58);
+    SafeReadD(actor + 0xE4u, &ve4);
+    SafeReadF(actor + STEER_OFF, &steer);
+    if (Sane(ve4)) SafeReadF(ve4 + 0x680u, &lock);
+    else if (Sane(v58)) SafeReadF(v58 + 0x680u, &lock);
+    Log(K_INIT, 0x6F, v58, ve4,
+        (DWORD)(((LONG)(steer * 1000.0f) & 0xFFFF) | (((LONG)(lock * 1000.0f) & 0xFFFF) << 16)));
+
+    { DWORD veh = Sane(ve4) ? ve4 : (Sane(v58) ? v58 : 0);
+      if (!veh) return;
+      if (!SafeReadD(veh + 0x534u, (DWORD *)&n) || n < 1 || n > 8) return;
+      if (!SafeReadD(veh + 0xCA8u, &arr) || !Sane(arr)) return;
+      SafeReadF(veh + 0x664u, &mass);
+      SafeReadF(veh + 0x50Cu, &grav);
+      { float nfs[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+        for (i = 0; i < n; i++) {
+            if (!SafeReadD(arr + (DWORD)i * 4u, &w) || !Sane(w)) continue;
+            if (SafeReadF(w + 0x90u, &nf) && SafeReadF(w + 0xDCu, &mu)) {
+                sum += mu * nf;
+                if (i < 4) nfs[i] = nf;
+            }
+        }
+        /* b=sum of mu*nf, c=mass x10, d=gravity x100 - the three numbers the clamp is built
+           out of, none of them clamped here. The per-wheel forces follow on 0x1B. */
+        Log(K_INIT, 0x1A, (DWORD)(LONG)sum, (DWORD)(LONG)(mass * 10.0f),
+            (DWORD)(LONG)(grav * 100.0f));
+        Log(K_INIT, 0x1B, (DWORD)(LONG)nfs[0], (DWORD)(LONG)nfs[1],
+            (DWORD)(LONG)((nfs[2] + nfs[3]) * 0.5f));
+      }
+    }
+}
+
+/* ---- the slip angle, ours rather than theirs -------------------------------------------------
+   No atan2: this module links -nostdlib and a libm call here would not resolve. The tangent
+   approximation is exact enough for the range that matters and the result is clamped anyway -
+   beyond about 35 degrees of slip the wheel is already at the ceiling. */
+static int GroundSlip(DWORD veh, float *outSlip, float *outSpeed)
+{
+    float v[3], f[3], r[3], len, dotF, dotR;
+    if (!veh) return 0;
+    if (!SafeReadF(veh + 0x2000u, &v[0]) || !SafeReadF(veh + 0x2004u, &v[1]) ||
+        !SafeReadF(veh + 0x2008u, &v[2])) return 0;
+    if (!SafeReadF(veh + 0x0CACu, &f[0]) || !SafeReadF(veh + 0x0CB0u, &f[1]) ||
+        !SafeReadF(veh + 0x0CB4u, &f[2])) return 0;
+    if (!SafeReadF(veh + 0x0CB8u, &r[0]) || !SafeReadF(veh + 0x0CBCu, &r[1]) ||
+        !SafeReadF(veh + 0x0CC0u, &r[2])) return 0;
+    len = v[0]*v[0] + v[1]*v[1] + v[2]*v[2];
+    if (len < 0.0001f) { *outSlip = 0.0f; *outSpeed = 0.0f; return 1; }
+    len = Sqrtf(len);
+    dotF = (v[0]*f[0] + v[1]*f[1] + v[2]*f[2]) / len;
+    dotR = (v[0]*r[0] + v[1]*r[1] + v[2]*r[2]) / len;
+    if (dotF < 0.0f) dotF = -dotF;                 /* reversing is not a 180-degree slide */
+    if (dotF < 0.2f) dotF = 0.2f;
+    *outSlip  = dotR / dotF;                       /* tan(slip), signed by which side it slides */
+    *outSpeed = len;
+    return 1;
+}
+
+/* ---- THE FRONT AXLE'S SLIP ANGLE - the defect run 016 found -----------------------------------
+ *
+ * The complaint: as for sustained corners, they still seem not to be felt. The
+ * slip is the angle between the velocity and the BODY's forward axis, so in an ordinary corner it
+ * is near zero and SAT said nothing. Measured, not guessed: of 467 rows in the autotest, the large
+ * angles are all slides.
+ *
+ * A real self-aligning torque follows the FRONT TYRES' slip angle, and the textbook expression is
+ *
+ *     alpha_front = (vy + a * r) / vx - delta
+ *
+ * with `vy/vx` the body slip we already have, `a` the distance from the centre of mass to the
+ * front axle, `r` the yaw rate and `delta` the front wheels' steering angle. Every term is now
+ * readable in this build:
+ *
+ *   r      `veh+0x490..0x498` is the angular velocity VECTOR in rad/s - a real physics field,
+ *          not our differentiated heading. Yaw is its component along the up axis `veh+0xCC4`.
+ *   delta  `wheel+0x114` in radians, and `wheel+0x188` is non-zero only on a steerable wheel.
+ *          The listing could not confirm the game WRITES it per frame from the player's input,
+ *          so the code measures whether it moves and falls back when it does not.
+ *   a      from the wheel mount offsets at `wheel+0x10..0x18`, with an ini override.
+ *
+ * THE FALLBACK IS PHYSICS TOO, not a fudge: lateral acceleration in a corner is `v * r`, the
+ * lateral force on the front tyres is proportional to it, and one g of it corresponds to roughly
+ * the optimal slip angle of an ordinary tyre - which is why the constant below is 0.16, the same
+ * 9 degrees the tyre curve peaks at.
+ */
+/* Reads the yaw rate and the front wheels' steering angle. Returns 0 if the vehicle cannot be
+   read at all; `haveSteer` says whether a steerable wheel was found, which is a different claim
+   from the angle being non-zero. */
+static int GroundYawSteer(DWORD veh, float *outYaw, float *outDelta, int *haveSteer)
+{
+    DWORD arr = 0, w, gate;
+    int n = 0, i, nsteer = 0;
+    float om[3], up[3], d = 0.0f, sum = 0.0f;
+    *outYaw = 0.0f; *outDelta = 0.0f; *haveSteer = 0;
+    if (!veh) return 0;
+    if (!SafeReadF(veh + 0x490u, &om[0]) || !SafeReadF(veh + 0x494u, &om[1]) ||
+        !SafeReadF(veh + 0x498u, &om[2])) return 0;
+    if (!SafeReadF(veh + 0xCC4u, &up[0]) || !SafeReadF(veh + 0xCC8u, &up[1]) ||
+        !SafeReadF(veh + 0xCCCu, &up[2])) return 0;
+    *outYaw = om[0] * up[0] + om[1] * up[1] + om[2] * up[2];
+    if (!SafeReadD(veh + 0x534u, (DWORD *)&n) || n < 1 || n > 8) return 1;
+    if (!SafeReadD(veh + 0xCA8u, &arr) || !Sane(arr))            return 1;
+    /* THE OLD READ HERE WAS WRONG TWICE OVER and is kept only as this note, 2026-09-13.
+       It took `wheel+0x188` as "this wheel steers" and `wheel+0x114` as the steering angle. In the
+       decompilation `+0x188` is the DAMAGE WOBBLE amplitude - zero on an undamaged car, which is
+       why the field read a flat zero for 122 samples and looked dead - and `+0x114` is the wheel's
+       SPIN angle, integrated as distance over radius and wrapped at 2 pi (FUN_004de020). On a
+       damaged car the gate would have opened and fed a rolling angle in as steering.
+       The steering angle now comes from the wheel's own forward vector against the body's, in
+       GroundRead, where the wheel is read anyway. Flag 0x1 says which wheels steer. */
+    for (i = 0; i < n; i++) {
+        if (!SafeReadD(arr + (DWORD)i * 4u, &w) || !Sane(w)) continue;
+        if (!SafeReadD(w + 0x120u, &gate) || (gate & 0x1u) == 0) continue;  /* not steered */
+        d = g_gndLastDelta;                       /* measured in GroundRead, from the vectors */
+        if (d < -1.5f || d > 1.5f)                          continue;   /* radians, or nonsense */
+        sum += d; nsteer++;
+        break;                                    /* it is already the average of both wheels */
+    }
+    if (nsteer) { *outDelta = sum / (float)nsteer; *haveSteer = 1; }
+    return 1;
+}
+
+/* The effective slip angle SAT is built from. `mode` picks the expression; in auto it uses the
+   kinematic one as soon as the steering field has been seen to move, and the lateral-acceleration
+   one until then - so a dead field degrades to something that still loads the wheel in a corner
+   rather than to silence. */
+static float GroundAlphaEff(float slipBody, float speed, float yaw, float delta, int haveSteer)
+{
+    float vx = speed < 2.0f ? 2.0f : speed;          /* below walking pace the divisor explodes */
+    float a  = (float)g_gndFrontAxleCm * 0.01f;
+    int kinematic = (g_gndAlphaMode == 2) ||
+                    (g_gndAlphaMode == 0 && haveSteer && g_gndSteerLive);
+    if (kinematic) return slipBody + (a * yaw) / vx - delta;
+    { float ayG = (speed * yaw) / 9.81f;
+      return slipBody + ayG * 0.16f * ((float)g_gndAyGain * 0.01f); }
+}
+
+/* THE SIGN SOURCE, and it is the kinematic expression UNCONDITIONALLY - never the mode selector
+   above. That distinction is the whole safety of this function: the lateral-acceleration fallback
+   has no `- delta` in it, so its sign is the body's, and the body's lateral velocity is exactly
+   the small noisy quantity this change exists to stop signing the force with. Using GroundAlphaEff
+   here would have inverted SAT for the seconds before the steering field proves live - a runaway
+   in his hands, not a subtle regression. See g_gndSignBand. */
+static float GroundAlphaKin(float slipBody, float speed, float yaw, float delta)
+{
+    float vx = speed < 2.0f ? 2.0f : speed;
+    float a  = (float)g_gndFrontAxleCm * 0.01f;
+    return slipBody + (a * yaw) / vx - delta;
+}
+
+/* THE TYRE CURVE. Force rises with slip to the tyre's optimal angle and FALLS beyond it - that
+   fall is the whole point: it is how a wheel tells the driver the front has let go, and no spring
+   pulled toward a centre can express it. GTA MT calls this calcSlipRatio; Assetto Corsa's SAT has
+   the same shape and the same reason. Below the peak it is linear; above, it decays to
+   `ground_falloff_pct` of the peak at twice the optimal angle and stays there. */
+/* v7.96 - THE SPEED CURVE, six anchors and straight lines between them.
+   A table rather than a power law for two reasons: this module links -nostdlib and has no powf,
+   and a table can be retuned WHILE HE DRIVES, one number at a time, which is how every other
+   decision in this rework was actually made. Outside the ends it is flat, so a stopped car and a
+   130 km/h straight both have a defined answer.
+   Anchors are speed in km/h and the multiplier in percent. Sorted by construction, not by trust:
+   if a pair is out of order the interpolation would run backwards, so the loop below simply takes
+   the first bracket that contains the speed and falls back to the last anchor. */
+static float GroundSpeedMult(float kmh)
+{
+    float m;
+    int i;
+    if (!g_gndSpdOn) return 1.0f;
+    /* the letters scale the curve, never its shape - one multiply at the end, so every anchor
+       and every point between them moves by the same factor */
+    if (kmh <= (float)g_gndSpdV[0]) {
+        m = (float)g_gndSpdM[0] * 0.01f;
+    } else {
+        m = (float)g_gndSpdM[GND_SPD_PTS - 1] * 0.01f;
+        for (i = 1; i < GND_SPD_PTS; i++) {
+            float v0 = (float)g_gndSpdV[i - 1], v1 = (float)g_gndSpdV[i];
+            if (kmh <= v1) {
+                float span = v1 - v0;
+                float t = span > 0.01f ? (kmh - v0) / span : 0.0f;
+                float m0 = (float)g_gndSpdM[i - 1] * 0.01f;
+                float m1 = (float)g_gndSpdM[i] * 0.01f;
+                m = m0 + (m1 - m0) * t;
+                break;
+            }
+        }
+    }
+    return m * (float)g_gndSpdScale * 0.01f;
+}
+
+static float GroundSlipCurve(float aSlip, float optimal)
+{
+    float a, r, floorv, post, w;
+    if (optimal < 0.01f) optimal = 0.01f;
+    a = aSlip / optimal;
+    if (a <= 1.0f && g_gndCentreK > 0) {
+        /* v7.93 - THE CENTRE, and it is the knob that stops the peak and the centre dragging each
+           other. Measured on ours-024: on OUR angle scale the engine's squeal flag is up in
+           0.2-2.6% of rows below 20 deg, 14.5% at 20-25 and 90.7% at 25-30 - so the tyre's real
+           limit is around 20 degrees and the peaks sat at 4-5, which is: tyres not squealing yet,
+           but all is already here. Moving the peak out that far flattens the rise near zero, and the
+           force near zero is exactly what he ranks presets by.
+
+               curve(a) = a * (1 + k) / (1 + k * a)
+
+           0 at 0, exactly 1 AT THE PEAK whatever k is, monotonic, and its slope at zero is
+           (1 + k). So k sets the centre and `ground_opt_deg` sets where the tyre lets go, and
+           neither moves the other. k = 0 is the straight line, which is what the bend block
+           below still provides; the two are alternatives and centre_k wins when it is set. */
+        float kk = (float)g_gndCentreK * 0.01f;
+        return a * (1.0f + kk) / (1.0f + kk * a);
+    }
+    if (a <= 1.0f) {
+        /* v7.90 - THE BEND below the peak, requested like in Assetto Corsa: with bend 100 this is the
+           straight line every drive so far was measured on, and the expression is bit-identical
+           to the old `return a`. With bend 200 it is a*a - light at small angles, building hard
+           as the corner tightens. In between, a blend of the two, which stays monotonic and is
+           exact at both ends. No powf: this module links -nostdlib. */
+        w = (float)(g_gndBend - 100) * 0.01f;
+        if (w <= 0.0f) return a;
+        if (w > 1.0f)  w = 1.0f;
+        return a * ((1.0f - w) + w * a);
+    }
+    /* THEIRS, read out of the repository on 2026-09-13 and verified against the file myself:
+           calcSlipRatio(): map(|slip|, slipOpt, postSlipOptRatio*slipOpt, 1.0, postOptSlipMin)
+       with postSlipOptRatio = 2.5 and postOptSlipMin = 0.0 - so the force decays to NOTHING by
+       two and a half times the optimal angle and stays there. Ours decayed only to 45% and did
+       it by 2x, which is a wheel that keeps talking after the front has gone. Both numbers are
+       settings now, but the defaults are theirs. */
+    floorv = (float)g_gndFalloff * 0.01f;
+    post   = (float)g_gndPostRatio * 0.01f;
+    if (post <= 1.01f) post = 1.01f;
+    if (a >= post) return floorv;
+    r = 1.0f - (1.0f - floorv) * ((a - 1.0f) / (post - 1.0f));
+    if (r < floorv) r = floorv;
+    return r;
+}
+
+/* ---- GTA MT's longSlipMult, computed from the game's own drivetrain --------------------------
+   Theirs: ratio = max(surfaceSpeed, groundSpeed) / max(min(...), 1), clamped 1..10, then
+   map(ratio, 1..2 -> 1..0) with a floor of 0.2. A spinning or locked tyre cannot align itself, so
+   the steering goes light - and that lightness is information, not a loss.
+
+   The surface speed is the engine's own expression, found in three places in the decompilation
+   and identical in each (FUN_004ED4F0, the squeal; FUN_004E19D0; the inverse in FUN_004DF9A0):
+
+       surface = revs(veh+0x5B8) / ratio(veh+0x5E0 + gear*4) * circumference(veh+0x61C)
+
+   so this is a port, not an approximation. Two gates, both the game's own: in neutral the wheels
+   are not tied to the engine at all, and FUN_004DF9A0 itself refuses the comparison below a
+   clutch of 0.9. A LOCKED wheel is the case the formula cannot see - the drivetrain says nothing
+   about a wheel the brake has stopped - so the flag the solver sets for exactly that (0x20) takes
+   it to the floor directly. */
+static float GroundLongMult(DWORD veh, const GNDSTATE *g)
+{
+    float revs = 0.0f, ratio = 0.0f, circ = 0.0f, gnd = 0.0f, clutch = 0.0f;
+    float surf, hi, lo, r, floorV = (float)g_gndLongFloor * 0.01f;
+    int gear = 0;
+    if (!g_gndLong) return 1.0f;
+    if (g->nSteer && (g->flagsF & 0x20u)) return floorV;      /* the brake has locked a wheel */
+    if (!SafeReadD(veh + 0x5CCu, (DWORD *)&gear) || gear == 0 || gear < -1 || gear > 10)
+        return 1.0f;                                          /* neutral, or not a gear at all */
+    if (!SafeReadF(veh + 0x64Cu, &clutch) || clutch < 0.9f)    return 1.0f;
+    if (!SafeReadF(veh + 0x5B8u, &revs))                       return 1.0f;
+    if (!SafeReadF(veh + 0x5E0u + (DWORD)(gear * 4), &ratio) || ratio <= 0.001f) return 1.0f;
+    if (!SafeReadF(veh + 0x61Cu, &circ) || circ <= 0.01f)      return 1.0f;
+    if (!SafeReadF(veh + 0x60Cu, &gnd))                        return 1.0f;
+    surf = (revs / ratio) * circ;
+    if (surf < 0.0f) surf = -surf;
+    if (gnd  < 0.0f) gnd  = -gnd;
+    hi = surf > gnd ? surf : gnd;
+    lo = surf > gnd ? gnd  : surf;
+    if (lo < 1.0f) lo = 1.0f;                                  /* theirs, and it caps a standstill */
+    r = hi / lo;
+    if (r <= 1.0f) return 1.0f;
+    if (r >= 2.0f) return floorV;
+    { float m = 2.0f - r;                                      /* map(r, 1..2 -> 1..0) */
+      return m < floorV ? floorV : m; }
+}
+
+/* ---- v811: HOW MUCH GRIP THE DAMPER SHOULD SEE, which is not the force curve -----------------
+   The force curve is zero at zero slip angle: no angle, no aligning torque. Handing that same
+   number to the damper as "how much the tyre is holding" made a straight road indistinguishable
+   from a slide, and `ground_damp_slip = 78` then removed the damper on both. Measured in his own
+   logs above 25 km/h (0x1D against 0x1E): 610 of 2625 while driving straight, 2129 at the peak,
+   756 in a real slide - a curve, where the setting asks for a step at the breakaway.
+
+   mode 1 (shipped from v811): the tyre HOLDS below the peak and only lets go past it.
+   mode 0: the v810 arithmetic, bit for bit, because the approved feel was approved with it.
+
+   Kept as its own function so a test can reach it. Every check that existed before handed
+   DamperCoeffFor a grip of 1.0 by hand, which is why 37 green checks never saw this. */
+static float GroundGripForDamper(float aSlip, float optimal, float ratio, float longMult)
+{
+    float held;
+    if (g_gndDampGripMode)
+        held = (aSlip <= optimal) ? 1.0f : ratio;
+    else
+        held = ratio;
+    if (held < 0.0f) held = 0.0f;
+    if (held > 1.0f) held = 1.0f;
+    return held * longMult;
+}
+
+/* x^2.5 without libm: x*x*sqrt(x). GTA MT raises the weight factor by this below its design load,
+   and the exponent is what makes an unloaded front axle read as hollow rather than merely light. */
+static float GroundPow25(float x)
+{
+    if (x <= 0.0f) return 0.0f;
+    if (x >= 1.0f) return 1.0f;
+    return x * x * Sqrtf(x);
+}
+
+/* The whole channel, one call per tick. Returns the force to ADD to the continuous term, and
+   writes out the load so the caller can fade its own forces with it (his task 1). */
+/* NOINLINE, and it is load-bearing rather than a style choice: inlined into the FFB thread its
+   locals plus a GNDSTATE push that frame past 4 KB, clang emits a call to __alloca for the stack
+   probe, and __alloca does not exist under -nostdlib. The build fails loudly, which is the good
+   case - but the thread has no frame to spare, so this stays. */
+__attribute__((noinline))
+static float GroundForce(DWORD veh, float *outLoad)
+{
+    static float s_force = 0.0f, s_suspFL = 0.0f, s_suspFR = 0.0f, s_longMult = 1.0f;
+    static int   s_haveSusp = 0;
+    static DWORD s_last = 0;
+    DWORD nowMs = GND_NOW();
+    int dtMs;
+    GNDSTATE g;
+    /* MEASURED dt, never the nominal tick - a period asked for is not a period achieved, and a
+       rate computed from the one you asked for is wrong by however much the OS missed it
+       (`docs\MEASURED-TIME-NOT-NOMINAL-TIME.md`).
+       A LONG TICK IS A LONG TICK, NOT A FREE STEP. This used to read
+       `if (dtMs < 0 || dtMs > 100) dtMs = 0;` and the assembly below then took its `else` branch,
+       which assigned the raw target straight into the sent force - past the smoothing AND past the
+       slew ceiling. So the one moment the machine hitched was the one moment the wheel was allowed
+       to move by any amount at all, and his drive has twelve pairs of rows that outran the 40000
+       units/second ceiling, the largest of them 11269 units across 47 ms where 1880 was the limit.
+       Clamping the long tick keeps the ceiling in force: at 100 ms the biggest legal step is 4000.
+       A zero-length tick now HOLDS the force instead of reassigning it, which is what zero elapsed
+       time means. */
+    dtMs = s_last ? (int)(nowMs - s_last) : 0;
+    /* THE CLOCK ONLY ADVANCES WHEN IT MOVED. With a 15.6 ms clock and a 15.4 ms tick, roughly one
+       call in three reads a delta of zero; advancing `s_last` on those would throw that tick's
+       time away and the next delta would understate the interval. Carrying it forward instead
+       means no elapsed time is ever lost, so the slew ceiling is enforced against real seconds. */
+    if (dtMs > 0 || !s_last) s_last = nowMs;
+    if (dtMs < 0) dtMs = 0;
+    if (dtMs > GND_DT_MAX_MS) dtMs = GND_DT_MAX_MS;
+    float slip = 0.0f, spd = 0.0f, sat = 0.0f, detail = 0.0f, caster = 0.0f;
+    float want, weight, velFac, step, d, a, satMult = 1.0f;
+    *outLoad = 1.0f;
+    g_gndCalls++;
+    if (!g_gndOn) return 0.0f;
+    /* NEUTRAL, NEVER SILENT. This used to leave the last load standing, which meant a stale 0.02
+       from the instant a pointer went bad would have gone on gating the damper and the spring
+       for the rest of the drive - and a wheel that has gone limp looks exactly like a broken
+       device. A gate that does not know says 1.0. */
+    if (!GroundRead(veh, &g)) { g_gndLastLoad = 1.0f; return 0.0f; }
+    g_gndReads++;
+    g_gndLastLoad = g.loadAll;
+    if (g.loadFront < 0.1f) g_gndAirTicks++;
+    *outLoad = g.loadAll;
+    if (!GroundSlip(veh, &slip, &spd)) return 0.0f;
+
+    /* ---- THE GAME STOPS UPDATING THE CAR AND WE KEEP READING IT -------------------------------
+       Three windows of drive ours-019 held the sent force at a constant value for 11.9, 12.4 and
+       3.9 seconds: the main menu, the Car Controls screen and the exit dialog. The car object is
+       simply not written while the game is paused, so every field we read is last frame's, the
+       model computes the same answer for ever, and the wheel sits pulled to one side. It is a
+       small force - 151 and -438 units in his log - and it is exactly the feel of a dead wheel.
+       A frozen input is DETECTED rather than assumed: the speed, the body slip and the steering
+       angle bit-identical for `ground_stale_ticks` calls in a row. A genuinely parked car trips
+       the same test and nothing is lost by it - at a standstill this channel's force is already
+       zero, and the standstill DAMPER, which is the part he approves of, is a separate effect that
+       this does not touch. */
+    /* MOVED BELOW - it needs the yaw rate, which is read in the next block. The first version
+       compared the speed, the body slip and the steering angle only, and a test that turned the
+       car harder without changing any of those three was called frozen. A detector is only as
+       wide as the inputs it watches. */
+
+    /* The body slip is kept separately: it is what the old channel used, it is what the log
+       compares against, and the corner test - a loaded wheel with NO slide - is exactly the case
+       where these two numbers must disagree. */
+    { float yaw = 0.0f, delta = 0.0f;
+      int haveSteer = 0;
+      static float s_dMin = 1e9f, s_dMax = -1e9f;
+      GroundYawSteer(veh, &yaw, &delta, &haveSteer);
+      /* Is the steering field alive? The listing could not say, so measure it: a field that has
+         swung more than a degree and a half over the session is being written by something. */
+      if (haveSteer) {
+          if (delta < s_dMin) s_dMin = delta;
+          if (delta > s_dMax) s_dMax = delta;
+          if ((s_dMax - s_dMin) > 0.026f) g_gndSteerLive = 1;
+      }
+      g_gndLastBodySlip = slip;
+      g_gndLastYaw      = yaw;
+      g_gndLastDelta    = g.nSteer ? g.deltaF : delta;
+      /* THE ENGINE'S OWN SLIP ANGLE, once it has proved it moves. `wheel+0x108` is sin of the
+         angle between the contact patch's velocity and the wheel's heading - the quantity every
+         line of this channel has been estimating since July, measured by the solver that also
+         decides grip. Liveness is measured, not assumed: a field read out of a listing is a
+         hypothesis until a running game disagrees with zero, and the estimate stays in charge
+         until then. sin against our tangent costs 8% at 20 degrees of slip, well inside the
+         fade, so no conversion is worth the code. */
+      if (g.nSteer) {
+          float s = g.sinSlipF < 0.0f ? -g.sinSlipF : g.sinSlipF;
+          if (s > 0.002f) g_gndSlipLive = 1;
+      }
+      g_gndLastSinSlip = g.sinSlipF;
+      if (g_gndSlipSrc == 3 || (g_gndSlipSrc == 0 && g.nSteer && g_gndSlipLive)) {
+          /* MAGNITUDE FROM THE ENGINE, SIGN FROM THE KINEMATIC ANGLE - see g_gndSignBand for the
+             measurement that forced this apart. `-alphaKin` is what our own convention calls the
+             slip: positive when the wheel is steered right, which is the direction the force has
+             to oppose. Inside the band it fades through zero instead of flipping sides. */
+          float mag = g.sinSlipF < 0.0f ? -g.sinSlipF : g.sinSlipF;
+          if (g_gndSignBand > 0 && g.nSteer) {
+              float w = -GroundAlphaKin(slip, spd, yaw, g.deltaF)
+                        / ((float)g_gndSignBand * 0.001f);
+              if (w >  1.0f) w =  1.0f;
+              if (w < -1.0f) w = -1.0f;
+              slip = mag * w;
+          } else {
+              slip = g.sinSlipF;          /* the old device-frame sign, kept as the escape hatch */
+          }
+      } else {
+          slip = GroundAlphaEff(slip, spd, yaw, delta, haveSteer);
+      }
+    }
+
+    /* ---- IS THE CAR BEING UPDATED AT ALL? Every input it has, compared with last tick's -------
+       Placed here because this is the first point where all four are known. Four, not three: the
+       yaw rate can change while the speed, the body slip and the steering angle do not, and the
+       first version of this check called that frozen. */
+    {
+        static float s_pSpd = -1.0f, s_pSlip = -1.0f, s_pDelta = -1.0f, s_pYaw = -1.0f;
+        static int   s_staleN = 0;
+        if (spd == s_pSpd && g_gndLastBodySlip == s_pSlip &&
+            g_gndLastDelta == s_pDelta && g_gndLastYaw == s_pYaw) {
+            if (s_staleN < 1000000) s_staleN++;
+            if (g_gndStaleTicks > 0 && s_staleN == g_gndStaleTicks)
+                Log(K_INIT, 0x26, 1, (DWORD)s_staleN, (DWORD)(LONG)g_gndLastForce);
+        } else {
+            if (g_gndStaleTicks > 0 && s_staleN >= g_gndStaleTicks)
+                Log(K_INIT, 0x26, 0, (DWORD)s_staleN, (DWORD)(LONG)g_gndLastForce);
+            s_staleN = 0;
+        }
+        s_pSpd = spd; s_pSlip = g_gndLastBodySlip;
+        s_pDelta = g_gndLastDelta; s_pYaw = g_gndLastYaw;
+        g_gndStale = (g_gndStaleTicks > 0 && s_staleN >= g_gndStaleTicks) ? 1 : 0;
+    }
+
+    /* ---- SAT: the steering weight, and where the wheel wants to return to ---- */
+    if (g_gndSat) {
+        float aSlip = slip < 0.0f ? -slip : slip;
+        float optimal = (float)g_gndOptDeg * 0.017453f;   /* degrees -> tan, small angle */
+        float ratio = GroundSlipCurve(aSlip, optimal);
+        weight = g.loadFront;
+        if (weight < 1.0f) weight = GroundPow25(weight);  /* theirs, and it is the airborne fade */
+        velFac = ((spd * 100.0f) - (float)g_gndVmin) / (float)(g_gndVfull - g_gndVmin);
+        if (velFac < 0.0f) velFac = 0.0f;
+        if (velFac > 1.0f) velFac = 1.0f;
+        /* GTA MT's last multiplier, and the one we were told could not be ported. Smoothed, so a
+           single tick of wheelspin is a fade rather than a step in the driver's hands. */
+        { float target = GroundLongMult(veh, &g);
+          float aL = (g_gndLongTauMs > 0 && dtMs > 0)
+                   ? ((float)dtMs / (float)(dtMs + g_gndLongTauMs)) : 1.0f;
+          s_longMult += (target - s_longMult) * aL;
+          g_gndLastLong = s_longMult; }
+        /* v7.96: THE SPEED CURVE. Measured on ours-028 inside one preset, so no preset change
+           pollutes it: what one g of cornering COSTS in force at each speed, which would be flat
+           if the model followed the physics and instead varies by a factor of eight -
+           10-20 km/h 19187, 20-30 10158, 30-40 5112, 40-50 4192, 50-70 3137, 70-90 2405.
+           The aligning torque is Fy x trail and Fy = m x ay, so the same g must weigh the same
+           whatever the speed; ours does not, because the force comes from the slip ANGLE and at
+           crawling speed the same corner produces a large angle at a tiny acceleration.
+           The remark: otherwise right now it still seems the same regardless of speed
+           - and the measurement says worse than that, below 40 it is heavier per g, not equal.
+           The flattening multipliers are 0.22 / 0.41 / 0.82 / 1.00 / 1.34 / 1.74; the shipped
+           curve is the choice of a softer low end (physics 0.22 would be too little). */
+        satMult = GroundSpeedMult(spd * 3.6f);
+        g_gndLastKmh = spd * 3.6f;
+        TrueSpeedRingPush(g_gndLastKmh, GetTickCount());
+        g_gndLastSatMult = satMult;
+        sat = (float)g_gndSatK * ratio * velFac * weight * s_longMult * satMult;
+        if (slip > 0.0f) sat = -sat;                      /* opposes the slide: the counter-steer */
+        /* v7.92: HOW MUCH GRIP THE FRONT STILL HAS, 1 = full, 0 = gone. The tyre curve past its
+           peak and the longitudinal fade are the two ways this model knows the front has let go,
+           and it is the same quantity the damper now follows - his ours-023 complaint was that
+           the wheel goes light in FORCE but stays thick in DAMPING at exactly that moment:
+           on F5 the wheel is too damped on loss of slip... a lighter
+           wheel wanted. Kept separate from the load gate, which answers a different question (wheels in
+           the air), because a sliding tyre is still carrying its load. */
+        /* v811: below the peak the tyre is HOLDING, whatever the force curve says about it.
+           Its own function so it can be tested without a car - the defect it fixes lived for
+           eight builds behind 37 green checks precisely because every one of them handed
+           DamperCoeffFor a grip of 1.0 and never asked where a real grip comes from. */
+        g_gndLastGrip = GroundGripForDamper(aSlip, optimal, ratio, s_longMult);
+    } else {
+        g_gndLastGrip = 1.0f;   /* NEUTRAL when it does not know - a grip term that failed shut
+                                   would silence the damper and read as a broken wheel */
+    }
+
+    /* ---- CASTER: the wheels straighten themselves as the car rolls ----------------------------
+       Proportional to the steering angle over the vehicle's own maximum lock (`veh+0x680`), to
+       the front load, and to nothing else once the car is rolling at all. This is the geometry
+       term, not a spring: a spring pulls towards a fixed centre whatever the tyres are doing,
+       while this one dies with the load exactly like SAT - in the air the wheels do not
+       straighten either. */
+    if (g_gndCasterK > 0 && g.nSteer) {
+        float lock = 0.0f, norm, roll;
+        if (!SafeReadF(veh + 0x680u, &lock) || lock < 0.05f || lock > 2.0f) lock = 0.7f;
+        norm = g.deltaF / lock;
+        if (norm >  1.0f) norm =  1.0f;
+        if (norm < -1.0f) norm = -1.0f;
+        /* the square law, sign preserved: weak off centre, strongest at the lock. 100 = the old
+           linear behaviour, exactly. */
+        if (g_gndCasterExp >= 150) {
+            float an = norm < 0.0f ? -norm : norm;
+            if (g_gndCasterExp >= 250) norm = norm * an * an;   /* cube  */
+            else                       norm = norm * an;        /* square */
+        }
+        roll = (spd * 100.0f) / (float)g_gndCasterVcms;
+        if (roll > 1.0f) roll = 1.0f;
+        if (roll < 0.0f) roll = 0.0f;
+        caster = -(float)g_gndCasterK * norm * roll * g.loadFront;
+        /* the rate term - see g_gndCasterD. Clamped to the caster's own scale so a single noisy
+           sample of the steering angle cannot become a jolt in his hands. */
+        if (g_gndCasterD > 0 && dtMs > 0) {
+            static float s_prevDelta = 0.0f;
+            static int   s_havePrev = 0;
+            if (s_havePrev) {
+                float rate = (g.deltaF - s_prevDelta) / ((float)dtMs * 0.001f);   /* rad/s */
+                float dmp  = -(float)g_gndCasterD * rate;
+                if (dmp >  (float)g_gndCasterK) dmp =  (float)g_gndCasterK;
+                if (dmp < -(float)g_gndCasterK) dmp = -(float)g_gndCasterK;
+                dmp *= roll * g.loadFront;
+                /* KEPT APART FOR THE LOG, and the audit is why. These two terms have opposite
+                   jobs - the spring opposes the ANGLE, the damper opposes the RATE - so their sum
+                   routinely carries the sign of neither. With the square law the spring at a
+                   quarter of the lock is 150 units while the damper can be 2400, and the audit's
+                   "the caster restores" check read the sum and called 19% of the rows wrong on
+                   drive ours-019. It was measuring an addition, not a defect. */
+                g_gndLastCasterD = dmp;
+                caster += dmp;
+            } else {
+                g_gndLastCasterD = 0.0f;
+            }
+            s_prevDelta = g.deltaF; s_havePrev = 1;
+        }
+        g_gndLastCaster = caster;
+    } else {
+        g_gndLastCaster = 0.0f;
+        g_gndLastCasterD = 0.0f;
+    }
+
+    /* ---- Detail: one front wheel over a kerb pulls the wheel, both over it do not ---- */
+    if (g_gndDetail && g.haveSusp && dtMs > 0) {
+        if (s_haveSusp) {
+            /* THE MOVING AVERAGE IS THEIRS - GTA MT keeps DetailMAW (3) frames of per-wheel
+               compression speed and averages them before the force is built
+               (`VehicleData.cpp:132-153`). A first difference of a position sampled every 15 ms is
+               a noise amplifier, and ours had nothing between that difference and the driver's
+               hands. */
+            static float s_maw[GND_MAW_MAX];
+            static int   s_mawN = 0, s_mawI = 0;
+            float vFL = (g.suspFL - s_suspFL) / ((float)dtMs * 0.001f);
+            float vFR = (g.suspFR - s_suspFR) / ((float)dtMs * 0.001f);
+            int   n = (int)g_gndDetailMaw, k;
+            float acc = 0.0f;
+            if (n < 1) n = 1;
+            if (n > GND_MAW_MAX) n = GND_MAW_MAX;
+            s_maw[s_mawI] = vFR - vFL;
+            s_mawI = (s_mawI + 1) % GND_MAW_MAX;
+            if (s_mawN < GND_MAW_MAX) s_mawN++;
+            if (n > s_mawN) n = s_mawN;
+            for (k = 1; k <= n; k++)
+                acc += s_maw[(s_mawI - k + GND_MAW_MAX) % GND_MAW_MAX];
+            detail = (float)g_gndDetailK * (acc / (float)n);
+            /* their DetailLim, an explicit number, instead of borrowing the SAT scale */
+            if (detail >  (float)g_gndDetailLim) detail =  (float)g_gndDetailLim;
+            if (detail < -(float)g_gndDetailLim) detail = -(float)g_gndDetailLim;
+            detail *= g.loadFront;                        /* no texture through wheels in the air */
+        }
+        s_suspFL = g.suspFL; s_suspFR = g.suspFR; s_haveSusp = 1;
+    }
+    g_gndLastDetail = detail;
+
+    /* ---- THE DEVICE'S SIGN IS THE OPPOSITE OF OURS, and drive ours-017 is what proved it -------
+       Everything above is computed in the VEHICLE's frame: positive means "towards the car's
+       right", taken from the body's right axis at `veh+0xCB8`. The DirectInput axis this module
+       writes to runs the other way, so a force this file calls restoring physically drove the
+       wheel further from centre - positive feedback, and he felt it in the first ten seconds:
+       *"SAT feels inverted and pulls to the side. It does not pull to the centre, it pulls away.
+       At the centre it disappears. The moment it moves a little it accelerates and accelerates."*
+
+       The log carries the same thing as DYNAMICS rather than as opinion: five excursions from
+       under 0.15 rad to past 0.75 rad, each in under two seconds, and the wheel spent 12% of that
+       drive sitting at full lock. In every one of them our force grew as the angle grew.
+
+       ONE NEGATION HERE, not a flipped setting: `ground_invert` stays at 0 and stays an escape
+       hatch, because a default that has to be 1 to be correct is a bug wearing a setting's
+       clothes. Detail and caster flip with SAT deliberately - all three are built in the same
+       frame, so one sign serves all three and they cannot disagree later. */
+    /* v824: the centring pair grows above 600 deg - see g_centreK. 1.0 at 600 and below. */
+    {
+        float cg = CentreGain();
+        want = -(sat * cg + detail + caster * cg);
+    }
+    if (g_gndInvert) want = -want;
+    /* a frozen car is not a car: fade out rather than hold. It goes through the filter and the
+       slew like everything else, so the wheel relaxes instead of dropping. */
+    if (g_gndStale) want = 0.0f;
+
+    /* Smoothing and a slew ceiling. Theirs is recomputed every frame and sent raw; ours is
+       filtered because a direct drive executes a step literally - the lesson of run 011. */
+    if (dtMs > 0) {
+        a = (g_gndTauMs > 0) ? ((float)dtMs / (float)(dtMs + g_gndTauMs)) : 1.0f;
+        d = (want - s_force) * a;
+        step = (float)g_gndSlew * (float)dtMs * 0.001f;
+        /* v825: THE RATE CEILING SCALES WITH THE CHANNEL. A ceiling on how fast the force may
+           change is a ceiling like any other: at 400% the same corner asks for four times the
+           change, and a fixed 40000/s would deliver it four times slower - a slider that also
+           made the wheel lazier. Scaled by the channel's own size (GroundScalePct), so the shape
+           in time is his at every setting. Skipped at 100%: the v824 arithmetic, to the bit. */
+        {
+            LONG gs = GroundScalePct();
+            if (gs != 100) step = step * (float)gs * 0.01f;
+        }
+        if (step > 0.0f) { if (d > step) d = step; if (d < -step) d = -step; }
+        s_force += d;
+    }
+    /* NO `else s_force = want`. Zero measured time means nothing has happened yet, so the force
+       is held. The branch that used to be here is the one that let a hitched tick step the wheel
+       by eleven thousand units - see the dt clamp at the top of this function. */
+
+    /* ---- THE SELF-TEST: push the wheel off centre, let go, watch what the HARDWARE does -------
+       Four phases, and the only thing it decides is whether the angle came back. See the comment
+       on g_gndSelfTest for why no check made in our own frame could have caught the sign. */
+    if (g_gndSelfTest > 0 && g.nSteer) {
+        static int   s_stPhase = 0;      /* 0 wait, 1 push, 2 measure, 3 done with this run     */
+        static DWORD s_stT0 = 0;
+        static int   s_stRun = 0, s_stDir = 1;
+        static float s_stPeak = 0.0f;
+        float ang = g.deltaF;
+        float aAbs = ang < 0.0f ? -ang : ang;
+        if (s_stRun < g_gndSelfTest) {
+            if (s_stPhase == 0) {
+                /* Only from a straight wheel on a car that is properly MOVING - 4 m/s, not the
+                   1.5 it used to be. Below the damper's fade speed the standstill damper is near
+                   20000 and it simply holds the wheel: the first release of the straight-line run
+                   was logged as "pushed to 0.000 rad", which reads like a failed return and was
+                   actually a push that never moved anything. A test whose null result looks like
+                   a defect is worse than no test. */
+                if (spd > 4.0f && aAbs < 0.10f) {
+                    s_stPhase = 1; s_stT0 = nowMs; s_stPeak = 0.0f; g_gndSelfActive = 1;
+                    Log(K_INIT, 0x21, 0, (DWORD)(LONG)(ang * 10000.0f),
+                        (DWORD)(((DWORD)(LONG)(spd * 100.0f) & 0xFFFFu) | ((DWORD)s_stRun << 16)));
+                }
+            } else if (s_stPhase == 1) {
+                s_force = (float)(s_stDir * g_gndSelfMag);   /* the push, past the filter */
+                if (aAbs > s_stPeak) s_stPeak = aAbs;
+                if ((DWORD)(nowMs - s_stT0) > 500u) {
+                    s_stPhase = 2; s_stT0 = nowMs;
+                    Log(K_INIT, 0x21, 1, (DWORD)(LONG)(ang * 10000.0f),
+                        (DWORD)(((DWORD)(LONG)(s_stPeak * 10000.0f) & 0xFFFFu) |
+                                ((DWORD)s_stRun << 16)));
+                }
+            } else if (s_stPhase == 2) {
+                /* released - the model alone now moves the wheel. Every row is logged, because
+                   the SHAPE of the return is the evidence, not its endpoint. */
+                Log(K_INIT, 0x21, 2, (DWORD)(LONG)(ang * 10000.0f),
+                    (DWORD)(((DWORD)(LONG)(s_force) & 0xFFFFu) | ((DWORD)s_stRun << 16)));
+                if ((DWORD)(nowMs - s_stT0) > 3000u) {
+                    Log(K_INIT, 0x21, 3, (DWORD)(LONG)(ang * 10000.0f),
+                        (DWORD)(((DWORD)(LONG)(s_stPeak * 10000.0f) & 0xFFFFu) |
+                                ((DWORD)s_stRun << 16)));
+                    s_stPhase = 0; s_stRun++; s_stDir = -s_stDir; g_gndSelfActive = 0;
+                }
+            }
+        }
+    }
+
+    g_gndLastForce = s_force;
+
+    /* ---- 0x29 THE SPIKE: what the force was MADE OF at the moment it jumped -------------------
+       Written on the tick it happens, never one in four, because a bang is the one event in this
+       channel that a sampled log cannot represent. The three terms are packed as signed 16-bit
+       values, which is safe: SAT, detail and caster are each bounded well inside +-10000 by
+       ground_sat_k, ground_detail_lim and the caster's own ramp, and the packer clamps anyway
+       rather than letting a future constant wrap the field silently.
+         b = SAT       | detail << 16
+         c = caster    | (true km/h x10) << 16
+         d = the change in the SENT force across the last 60 ms, signed - what a hand feels as
+             a blow. NOT a one-tick difference: the slew ceiling bounds a tick to 640 units.
+       It answers the question the offline attribution can only guess at: a step whose detail term
+       moved with it is the suspension channel, one whose SAT term moved with it is the tyre
+       model, and one where neither moved is not ours at all and belongs to the impact family. */
+    if (g_gndSpike > 0 && dtMs > 0) {
+        /* THE WINDOW IS 60 ms, NOT ONE TICK, and that is the whole design of this row.
+           The slew ceiling allows ground_slew * dt = 40000 * 0.016 = 640 units in a 16 ms tick,
+           so a single-tick step can almost never reach a threshold worth calling a bang - a
+           per-tick test would have fired only on a hitch and reported the channel as silent
+           through every hit he actually felt. What a hand feels as a blow is the force ARRIVING
+           inside a few tens of milliseconds, which is this: the change against the oldest sample
+           still inside the window. Rate-limited to one row per 80 ms so a long ramp writes its
+           onset rather than a row per tick. */
+        static float s_hist[GND_SPIKE_HIST];
+        static DWORD s_histT[GND_SPIKE_HIST];
+        static int   s_histN = 0, s_histI = 0;
+        static DWORD s_lastSpike = 0;
+        float oldest = s_force;
+        int   k;
+        for (k = 0; k < s_histN; k++) {
+            int idx = (s_histI - 1 - k + GND_SPIKE_HIST) % GND_SPIKE_HIST;
+            if ((DWORD)(nowMs - s_histT[idx]) > 60u) break;
+            oldest = s_hist[idx];
+        }
+        float stepSent = s_force - oldest;
+        float stepAbs  = stepSent < 0.0f ? -stepSent : stepSent;
+        if (s_histN > 0 && stepAbs >= (float)g_gndSpike &&
+            (DWORD)(nowMs - s_lastSpike) >= 80u) {
+            s_lastSpike = nowMs;
+            LONG satI = (LONG)sat, detI = (LONG)detail, casI = (LONG)g_gndLastCaster;
+            LONG spdI = (LONG)(spd * 36.0f);            /* km/h x10 */
+            if (satI >  32767) satI =  32767; if (satI < -32768) satI = -32768;
+            if (detI >  32767) detI =  32767; if (detI < -32768) detI = -32768;
+            if (casI >  32767) casI =  32767; if (casI < -32768) casI = -32768;
+            if (spdI >  32767) spdI =  32767; if (spdI < 0)      spdI = 0;
+            Log(K_INIT, 0x29,
+                (DWORD)(((DWORD)satI & 0xFFFFu) | (((DWORD)detI & 0xFFFFu) << 16)),
+                (DWORD)(((DWORD)casI & 0xFFFFu) | (((DWORD)spdI & 0xFFFFu) << 16)),
+                (DWORD)(LONG)stepSent);
+        }
+        s_hist[s_histI] = s_force;
+        s_histT[s_histI] = nowMs;
+        s_histI = (s_histI + 1) % GND_SPIKE_HIST;
+        if (s_histN < GND_SPIKE_HIST) s_histN++;
+    }
+
+    if (g_gndLog) {
+        static DWORD s_n = 0;
+        /* THE ROW THAT SEPARATES A CORNER FROM A SLIDE. Without the body slip beside the effective
+           angle, a loaded wheel cannot be told from a sliding one, and "the corner now loads the
+           wheel" would be a claim rather than a measurement. */
+        if ((s_n & 3u) == 0)
+            Log(K_INIT, 0x1C, (DWORD)(LONG)(g_gndLastBodySlip * 10000.0f),
+                (DWORD)(LONG)(g_gndLastYaw * 10000.0f),
+                (DWORD)((((DWORD)(LONG)(g_gndLastDelta * 10000.0f)) & 0xFFFFu) |
+                        ((DWORD)(LONG)(GroundGate() * 10000.0f) << 16)));
+        /* THE ENGINE'S OWN TYRE STATE, beside ours. a = its sin(slip angle) x10000 signed;
+           b = the steered wheels' flags, so 0x20 (locked) and 0x80 (wheelspin) can be counted
+           against the fade; c = the fade x10000 with the measured steering angle above it.
+           This is the row that says whether the fields found in the decompilation are alive in a
+           running game - which is a claim no listing can settle. */
+        if ((s_n & 3u) == 0)
+            Log(K_INIT, 0x20, (DWORD)(LONG)g_gndLastCaster, (DWORD)(LONG)sat,
+                (DWORD)(LONG)(spd * 100.0f));
+        /* 0x22 - THE THREE THINGS ours-018b COULD NOT ANSWER, each of which cost a paragraph of
+           "we cannot separate this inside one log":
+             a = the detail channel AS SENT. It was never logged, so "is it the suspension or is it
+                 SAT" had to be estimated as a residual against two other rows written on a
+                 different tick. Now it is a column.
+             b = the MEASURED tick in ms. A hitch and a quiet tick looked identical from outside.
+             c = the TRUE speed, km/h x100, from the physics velocity vector at `veh+0x2000` - the
+                 one the model has always used. Every other speed in this log comes from
+                 `car+0x2A0C`, which halves ([[speed-field-double-store]]): on his drive it never
+                 passed 20 km/h while the speedometer in the frame read 35 mph and the coordinates
+                 gave 71. The force paths deliberately keep the old field - the impulse constants
+                 were fitted to it over 165 drives - but nothing that is only MEASURED should read
+                 it again. */
+        if ((s_n & 3u) == 0)
+            Log(K_INIT, 0x22, (DWORD)(LONG)g_gndLastDetail, (DWORD)dtMs,
+                (DWORD)(LONG)(spd * 360.0f));
+        /* 0x28 - THE CASTER, SPLIT. 0x20 keeps carrying the SUM and keeps its meaning, because a
+           log code that changes meaning between builds is a trap this project has already paid
+           for. a = the spring term (opposes the angle), b = the rate term (opposes the movement),
+           c = the stale flag, so a frozen car is visible in the same row that shows the force. */
+        if ((s_n & 3u) == 0)
+            Log(K_INIT, 0x28, (DWORD)(LONG)(g_gndLastCaster - g_gndLastCasterD),
+                (DWORD)(LONG)g_gndLastCasterD, (DWORD)g_gndStale);
+        if ((s_n & 3u) == 0)
+            Log(K_INIT, 0x1E, (DWORD)(LONG)(g_gndLastSinSlip * 10000.0f), g.flagsF,
+                (DWORD)((((DWORD)(LONG)(g_gndLastLong * 10000.0f)) & 0xFFFFu) |
+                        ((((DWORD)(LONG)(g.deltaF * 10000.0f)) & 0xFFFFu) << 16)));
+        if ((++s_n & 3u) == 0)
+            Log(K_GROUND, (DWORD)(LONG)(g.loadAll * 10000.0f),
+                g.planted | ((DWORD)g.n << 16) | ((DWORD)(LONG)(g.loadFront * 100.0f) << 20),
+                (DWORD)(LONG)(slip * 10000.0f), (DWORD)(LONG)s_force);
+    }
+    return s_force;
+}
+
+/* ---- the spring, extracted so it can be tested without a wheel, and then switched off --------
+   His decision, 2026-09-13: *"remove the spring, everything through SAT"*. A spring pulled to a
+   FIXED centre cannot express the front letting go - it pulls hardest exactly when the tyres have
+   stopped holding - and it is what he called dishonest in a slide. With the ground model running,
+   centring is the self-aligning torque's job and this effect stays silent.
+   The old arithmetic is kept intact behind `groundOn = 0`, so switching the channel off in the
+   game restores the approved feel bit for bit. */
+static LONG SpringCoeffFor(float speedKmh, float springX, int groundOn)
+{
+    float centerFactor, hiSpeedFactor;
+    if (groundOn) return 0;
+    centerFactor  = Clampf(speedKmh / CENTER_FULL_KMH, 0.0f, 1.0f);
+    hiSpeedFactor = Clampf((speedKmh - HISPEED_LO_KMH) / (HISPEED_HI_KMH - HISPEED_LO_KMH),
+                           0.0f, 1.0f);
+    return (LONG)((K_CENTER_DI * centerFactor + K_HISPEED_DI * hiSpeedFactor) * springX);
+}
+
+/* ---- the damper: halved in motion, no highway term, and it dies with the tyre load ----------
+   GTA MT's damper is map(speed, 0..DamperMinSpeed, DamperMax..DamperMin) and ours keeps its OWN
+   threshold: DAMP_FADE_KMH = 10 km/h, checked in this file rather than remembered, because that
+   small-speed range is the part of the current feel he likes.
+   Two changes, both his: the moving value halves because SAT now carries the weight that the
+   damper was standing in for, and the 80-120 km/h term goes entirely for the same reason. The
+   load multiplier is the empty wheel - in the air there is nothing to damp against. */
+static LONG DamperCoeffFor(float speedKmh, float dStatic, float dMoving, int groundOn, float gate,
+                           float grip)
+{
+    float fade, v;
+    /* THE MOVING VALUE IS SCALED HERE, NOT IN K_DAMP_DI_MOVING. Changing the constant would move
+       every feel profile and the truck factors with it, and the rule this project lives by is
+       that switching the channel off must return the approved build bit for bit. */
+    /* v811: the F1/F2 ladder names the moving damper OUTRIGHT, so what he reports back is the
+       number itself rather than a percentage of a base he cannot see. 0 = the percentage path,
+       which is what a shipped ini and the F6 reset both use. */
+    if (groundOn) {
+        if (g_gndDampMoveAbs > 0) dMoving = (float)g_gndDampMoveAbs;
+        else                      dMoving *= (float)g_gndDampMovePct * 0.01f;
+    }
+    fade = Clampf(speedKmh / DAMP_FADE_KMH, 0.0f, 1.0f);
+    v = dStatic + (dMoving - dStatic) * fade;
+    if (!groundOn) {
+        float hi = Clampf((speedKmh - HISPEED_DAMP_LO_KMH)
+                          / (HISPEED_DAMP_HI_KMH - HISPEED_DAMP_LO_KMH), 0.0f, 1.0f);
+        float hispeed = (float)K_DAMP_DI_HISPEED * (dMoving / (float)K_DAMP_DI_MOVING);
+        v += (hispeed - dMoving) * hi;
+    } else {
+        float floorV = (float)g_gndDampAir;
+        if (floorV > v) floorV = v;      /* never MORE damper than the planted wheel would have */
+        v *= gate;
+        /* v7.92: THE DAMPER GOES WITH THE GRIP. His ours-023 verdict, in his own words: the force
+           does lighten when the front lets go and that is liked, but the wheel is still too
+           damped... on loss of slip - a wheel that is light but thick, which is not
+           how a sliding car feels. `ground_damp_slip` is the percentage removed at FULL slide;
+           0 is the behaviour every drive before ours-023 was measured on. */
+        if (g_gndDampSlip > 0) {
+            float g = grip;
+            if (g < 0.0f) g = 0.0f;
+            if (g > 1.0f) g = 1.0f;
+            v *= 1.0f - ((float)g_gndDampSlip * 0.01f) * (1.0f - g);
+        }
+        if (v < floorV) v = floorV;      /* the thin airborne damper - see g_gndDampAir */
+        /* v811: THE STANDSTILL DAMPER IS HIS OWN KNOB, on the J key. His instruction, 2026-09-14:
+           leave as it is now: it is 4000, then try, say, 8000, 12000 and 20000.
+           Just switching, and a verdict in the end on what feels normal.
+           It names the FINISHED value at a dead stop and fades out by DAMP_FADE_KMH, so it cannot
+           reach into the moving feel he has already approved: at 10 km/h this term is exactly 0.
+           0 means "do not intervene", which is what a shipped ini carries. */
+        if (g_gndDampStand > 0 && speedKmh < DAMP_FADE_KMH) {
+            float blend = 1.0f - (speedKmh / DAMP_FADE_KMH);
+            if (blend < 0.0f) blend = 0.0f;
+            if (blend > 1.0f) blend = 1.0f;
+            v += ((float)g_gndDampStand - v) * blend;
+        }
+    }
+    if (v < 0.0f) v = 0.0f;
+    return (LONG)v;
+}
+
+/* THE COEFFICIENTS AS SENT, one tick in eight. 0xDC carries the same three numbers but only on a
+   mark key, so run 016 could not answer "did the damper stay heavy while I was in the air" from a
+   drive where he pressed nothing. This row makes the whole model checkable off ONE log: the spring
+   must be 0 with the channel on, the damper must follow the gate down to its thin airborne floor,
+   and friction must follow it to zero.
+
+   IT IS ITS OWN FUNCTION ON PURPOSE. Written inline in the FFB thread it pushed that frame past
+   4 KB and clang emitted a call to __alloca, which does not exist under -nostdlib: the build broke
+   loudly, which is the good case, but the lesson is that the thread's frame has no room left. */
+static void LogCoeffsSent(LONG spring, LONG damp, LONG fric)
+{
+    static DWORD s_coefN = 0;
+    if (!g_gndLog) return;
+    if ((s_coefN++ & 7u) != 0) return;
+    Log(K_INIT, 0x1D, (DWORD)spring,
+        (DWORD)(((DWORD)damp & 0xFFFFu) | ((DWORD)fric << 16)),
+        (DWORD)((((DWORD)(LONG)(GroundGate() * 10000.0f)) & 0xFFFFu) |
+                ((DWORD)g_spdX100 << 16)));
+}
+
+/* THE GATE. Every other force reads this one number: our own continuous force, and from v7.8 the
+   damper and whatever is left of the spring. It is deliberately the only way out of the ground
+   channel, so there is one place to look when the wheel goes light and one place to test.
+
+   It is NEUTRAL whenever it does not know - no channel, no gate setting, no vehicle - because the
+   two failure modes are not symmetrical: a gate stuck open costs the empty wheel, a gate stuck
+   shut costs the whole wheel and reads to the driver as broken hardware. */
+static float GroundGate(void)
+{
+    float L;
+    if (!g_gndOn || !g_gndGate) return 1.0f;
+    L = g_gndLastLoad;
+    if (L < 0.0f) return 0.0f;
+    if (L > 1.0f) return 1.0f;
+    return L;
+}
+
+/* Assert a state. Called by both keys and by the offline test, which is why the key reading and
+   the state change are separate functions - the half that matters is testable on a host with no
+   keyboard and no wheel.
+
+   IT ANSWERS IN THE WHEEL, because there is nowhere else to answer. He is driving, the game is
+   full screen and pauses if it loses focus, so a key that silently did nothing would be
+   indistinguishable from a key whose effect he could not feel. The two answers are DIFFERENT
+   shapes, so the wheel says which state he is now in rather than merely that something happened:
+
+     ON  - one nudge out and back, about 160 ms. One push.
+     OFF - two short taps the same way, about 200 ms. Unmistakably not one push.
+
+   Every press is logged (0x6B) even when it changes nothing, so the drive's own log says which
+   stretch was driven with the channel and which without - and a press that produced no row is a
+   press the module never saw, which is a different fault from a channel he could not feel. */
+static void GroundSetEnabled(LONG want)
+{
+    g_gndOverride = want ? 1 : 0;
+    g_gndOn       = g_gndOverride;
+    if (g_gndAckMag > 0) {
+        g_gndAckPat = want ? 0 : 1;
+        g_gndAck    = want ? 20 : 25;
+    }
+    Log(K_INIT, 0x6B, (DWORD)g_gndOn, (DWORD)g_gndReads,
+        (DWORD)(LONG)(g_gndLastLoad * 10000.0f));
+}
+
+/* v821: THE HOTKEYS ANSWER ONLY WHILE THE GAME IS IN FRONT.
+   ours-038, 2026-09-30: while the game was loading he typed "profil" into the Windows search box
+   (the frame at 16:32:53 shows it), and GetAsyncKeyState - which reads the WHOLE keyboard,
+   whatever window has focus - handed the module P, O, I and L, then an N. N is the ground
+   channel's OFF key, so the entire drive ran without the ground model and he reported "no
+   centring spring". Nothing was pressed in the game: the key recorder, which records only while
+   Game.exe is in front, has none of those keys.
+   So every key that CHANGES something here needs Game.exe's own window in front. A key held while
+   another window is in front reads as up, and is logged ONCE per key-down as 0x3C (a = the VK), so
+   a debrief sees the typing instead of having to infer it. The input telemetry further down keeps
+   its raw reads on purpose - it records what was held, which is true whatever had focus. */
+static int GameIsForeground(void)
+{
+    static DWORD s_at = 0xFFFFFFFFu;
+    static int   s_ok = 0;
+    DWORD now = GetTickCount();
+    if (now != s_at) {                  /* once per timer tick, not once per key */
+        HWND  fg  = GetForegroundWindow();
+        DWORD pid = 0;
+        if (fg) GetWindowThreadProcessId(fg, &pid);
+        s_ok = (fg != NULL && pid == GetCurrentProcessId());
+        s_at = now;
+    }
+    return s_ok;
+}
+
+static int KeyDown(int vk)
+{
+    static unsigned char s_refused[256];
+    int raw;
+    if (vk < 1 || vk > 255) return 0;   /* a retired key of 0 must never reach GetAsyncKeyState */
+    raw = (GetAsyncKeyState(vk) & 0x8000) != 0;
+    if (!raw) { s_refused[vk] = 0; return 0; }
+    if (GameIsForeground()) { s_refused[vk] = 0; return 1; }
+    if (!s_refused[vk]) {
+        s_refused[vk] = 1;
+        Log(K_INIT, 0x3C, (DWORD)vk, 0, 0);
+    }
+    return 0;
+}
+
+static void PollGroundKeys(void)
+{
+    static int downOn = 0, downOff = 0;
+    int on  = KeyDown((int)g_gndKeyOn);
+    int off = KeyDown((int)g_gndKeyOff);
+    if (on  && !downOn)  GroundSetEnabled(1);
+    if (off && !downOff) GroundSetEnabled(0);
+    downOn = on; downOff = off;
+}
+
+/* ---- v811: the two damper keys, and they are two because they answer two different questions --
+   J walks the standstill bank he asked for - 4000, 8000, 12000, 16000, 20000 - and the wheel
+   answers with that many pulses, so the acknowledgement names the STEP instead of merely
+   confirming a press ([[no-numpad-keyboard]]: he cannot see a toggle's state, so the wheel has to
+   say it). B switches between the old and the new meaning of "the front has let go", which is the
+   fix described at g_gndDampGripMode: one pulse for the new arithmetic, two for the v810 one.
+
+   Both are logged on every press (0x34), including a press that changes nothing, because a press
+   that produced no row is a press the module never saw - a different fault from one he could not
+   feel. B and J are two of the nine letters the game's own defaults leave alone (docs\KEY-MAP.md). */
+/* THE STANDSTILL DAMPER as a ladder rather than a cycle, his correction of 2026-09-14: two keys,
+   one step each way, so he can walk it the same way as the moving one. Step 2 (4000) is what the
+   v810 arithmetic actually delivers parked; step 10 is the 20000 the setting has always claimed. */
+#define DAMP_STAND_STEPS 10
+static const LONG g_dampStandBank[DAMP_STAND_STEPS] =
+    { 2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000, 18000, 20000 };
+
+/* THE DAMPER WHILE THE TYRES HOLD - what he feels driving straight, which is the half he asked to
+   walk step by step. Absolute coefficients rather than percentages, because a percentage of a
+   base he cannot see is not a number he can report back. Step 5 (2625) is where the approved
+   build sits once the grip fix is in; the published release sent 5250, which is step 9. */
+#define DAMP_GRIP_STEPS 10
+static const LONG g_dampGripBank[DAMP_GRIP_STEPS] =
+    { 500, 1000, 1500, 2000, 2625, 3250, 4000, 4750, 5500, 6500 };
+
+/* THERE IS NO LADDER FOR THE SLIDE, and that is the decision of 2026-09-14: after the breakaway no
+   damper is wanted at all. The current feel is liked. So `damp_slip`
+   stays at 78 and nothing in this build offers to move it - the half he likes is left alone, and
+   only the half he has never actually been able to judge gets a knob. */
+static volatile LONG g_dampGripIdx = 4;    /* 2625 */
+
+static void DampKeyAck(int pulses, int atEdge)
+{
+    if (g_gndAckMag <= 0) return;
+    if (atEdge) { g_gndAckPat = 1; g_gndAck = 25; return; }   /* the double tap: no further */
+    g_gndAckPat = 2;
+    g_gndAck    = (LONG)pulses * 20;
+}
+
+static void DampLog(void)
+{
+    g_dampKeyUsed   = 1;
+    g_dampKeepMode  = g_gndDampGripMode;
+    g_dampKeepAbs   = g_gndDampMoveAbs;
+    g_dampKeepStand = g_gndDampStand;
+    Log(K_INIT, 0x34, (DWORD)g_gndDampMoveAbs,
+        (DWORD)((DWORD)g_dampGripIdx | ((DWORD)g_gndDampStandIdx << 8)
+                | ((DWORD)g_gndDampGripMode << 16)),
+        (DWORD)g_gndDampStand);
+}
+
+static void DampApplyGrip(void)
+{
+    g_gndDampMoveAbs = g_dampGripBank[g_dampGripIdx];
+}
+
+/* ---- v811: SIX KEYS, his own layout, 2026-09-14 ----------------------------------------------
+   two of them to run the damper ladder before breakaway... and also a ladder of two keys
+   on the static damper, to run along it too and report which is liked...
+   F5 to reset everything to the settings with the damper fixed, and F6 to reset the settings to how
+   driving is set up - the latest references now.
+
+     F1 / F2   the damper while the tyres HOLD (driving straight) - one step down / up, ten steps
+               500 1000 1500 2000 [2625] 3250 4000 4750 5500 6500
+     F3 / F4   the damper at a STANDSTILL - one step down / up, ten steps
+               2000 [4000] 6000 8000 10000 12000 14000 16000 18000 20000
+     F5        everything to the FIXED damper: the grip fix on, 2625 holding, 20000 parked
+     F6        everything to the feel he is driving TODAY: the v810 arithmetic, bit for bit
+
+   The slide is NOT on a key. His words the same day: after the breakaway he wants no damper at
+   all and likes what he has, so `damp_slip` stays at 78 and this build does not offer to move it.
+
+   The wheel answers every press, because he cannot see a number while he drives: one pulse per
+   rung he has landed on, and the OFF pattern - two short taps - when the ladder has no further
+   rung that way. F5 answers with three pulses and F6 with five, so the two resets cannot be
+   confused with each other or with a rung.
+
+   THE PRESET BANK GIVES UP F1..F5 FOR THIS. It is not a loss: since v810 all five restore the
+   same approved base, so those keys assert one thing five times. U I O P keep the curve bank. */
+/* v814: the roll bank's keys. One key per state, never a cycle - the same shape as every other
+   bank here, and for the same reason: he cannot see which state he is in, so a key has to ASSERT
+   one rather than advance. The wheel answers with that many pulses. Every press is logged (0x35)
+   including one that changes nothing, because a press that produced no row is a press the module
+   never saw, which is a different fault from a state he could not tell apart. */
+static void RollSelect(int idx)
+{
+    if (idx < 0 || idx >= ROLL_PRESETS) return;
+    g_rollPresetCur = (LONG)(idx + 1);
+    g_rollGainPct   = g_rollBankGain[idx];
+    g_rollCap       = g_rollBankCap[idx];
+    g_rollKeyUsed   = 1;
+    if (g_gndAckMag > 0) {
+        g_gndAckPat = 2;
+        g_gndAck    = (LONG)(idx + 1) * 20;
+    }
+    Log(K_INIT, 0x35, (DWORD)g_rollPresetCur, (DWORD)g_rollGainPct, (DWORD)g_rollCap);
+}
+
+static void PollRollKeys(void)
+{
+    static int down[ROLL_PRESETS];
+    static const int vk[ROLL_PRESETS] = { 0x70, 0x71, 0x72 };   /* F1 F2 F3 */
+    int i;
+    if (!g_rollKeys) return;
+    for (i = 0; i < ROLL_PRESETS; i++) {
+        int now = KeyDown(vk[i]);
+        if (now && !down[i]) RollSelect(i);
+        down[i] = now;
+    }
+}
+
+static void CrashSelect(int idx)
+{
+    if (idx < 0 || idx >= CRASH_PRESETS) return;
+    g_crashPresetCur = (LONG)(idx + 1);
+    g_crashTrimPct   = g_crashBankTrim[idx];
+    g_crashCap       = g_crashBankCap[idx];
+    g_crashRampLo    = g_crashBankRampLo[idx];
+    g_crashRampHi    = g_crashBankRampHi[idx];
+    g_crashKeyUsed   = 1;
+    if (g_gndAckMag > 0) {
+        g_gndAckPat = 2;
+        g_gndAck    = (LONG)(idx + 1) * 20;
+    }
+    Log(K_INIT, 0x36, (DWORD)g_crashPresetCur, (DWORD)g_crashTrimPct, (DWORD)g_crashCap);
+    /* v820: 0x3A - the speed ramp of the state just selected: a = state, b = ramp start km/h,
+       c = ramp end km/h (0 / 0 = flat). Its own code, so 0x36 keeps the meaning it had. */
+    Log(K_INIT, 0x3A, (DWORD)g_crashPresetCur, (DWORD)g_crashRampLo, (DWORD)g_crashRampHi);
+}
+
+static void PollCrashKeys(void)
+{
+    static int down[CRASH_PRESETS];
+    static const int vk[CRASH_PRESETS] = { 0x73, 0x74, 0x75 };   /* F4 F5 F6 */
+    int i;
+    if (!g_crashKeys) return;
+    for (i = 0; i < CRASH_PRESETS; i++) {
+        int now = KeyDown(vk[i]);
+        if (now && !down[i]) CrashSelect(i);
+        down[i] = now;
+    }
+}
+
+/* v822 debug: see g_rangeKeys. The wheel answers with 1..5 pulses so he knows which range the
+   module now assumes; 0x3D a = degrees, b = the key (1..5), c = the resulting DorScale x1000. */
+static void RangeSelect(int idx)
+{
+    int s;
+    if (idx < 0 || idx >= RANGE_KEYS_N) return;
+    for (s = 0; s < N_DOR_SLOTS; s++) {
+        if (g_dorDegTab[s] != g_rangeKeyScaleAs[idx]) continue;   /* v823: the slot that SCALES */
+        g_dorSlot      = s;
+        g_dorNow       = g_rangeKeyDeg[idx];                      /* the degrees he set, logged */
+        g_dorTrim      = 100;
+        g_wallowTrim   = 100;
+        g_rangeKeyUsed = 1;
+        if (g_gndAckMag > 0) {
+            g_gndAckPat = 2;
+            g_gndAck    = (LONG)(idx + 1) * 20;
+        }
+        Log(K_INIT, 0x3D, (DWORD)g_dorNow, (DWORD)(idx + 1), (DWORD)(LONG)(DorScale() * 1000.0f));
+        return;
+    }
+}
+
+static void PollRangeKeys(void)
+{
+    static int down[RANGE_KEYS_N];
+    int i;
+    if (!g_rangeKeys) return;
+    for (i = 0; i < RANGE_KEYS_N; i++) {
+        int now = KeyDown(g_rangeKeyVk[i]);
+        if (now && !down[i]) RangeSelect(i);
+        down[i] = now;
+    }
+}
+
+static void PollDamperKeys(void)
+{
+    static int down[6] = { 0, 0, 0, 0, 0, 0 };
+    static const int vk[6] = { 0x70, 0x71, 0x72, 0x73, 0x74, 0x75 };
+    int now[6];
+    int i;
+    /* OFF BY DEFAULT SINCE ours-034 SETTLED BOTH LADDERS. Instruction: leave what is there for now,
+       6000, and the damper is not touched any more. A ladder left live on F1..F4 turns one stray F-key
+       into a silent change of the value he approved, and the log would record the new number as
+       though he had chosen it. `ground_damp_keys = 1` in the ini brings all six back for the next
+       time a damper question needs his hands - nothing was deleted. */
+    if (!g_gndDampKeys) return;
+    for (i = 0; i < 6; i++) now[i] = KeyDown(vk[i]);
+
+    if (now[0] && !down[0]) {                       /* F1: holding damper one step DOWN */
+        int edge = (g_dampGripIdx <= 0);
+        if (!edge) g_dampGripIdx--;
+        DampApplyGrip(); DampKeyAck((int)g_dampGripIdx + 1, edge); DampLog();
+    }
+    if (now[1] && !down[1]) {                       /* F2: holding damper one step UP */
+        int edge = (g_dampGripIdx >= DAMP_GRIP_STEPS - 1);
+        if (!edge) g_dampGripIdx++;
+        DampApplyGrip(); DampKeyAck((int)g_dampGripIdx + 1, edge); DampLog();
+    }
+    if (now[2] && !down[2]) {                       /* F3: standstill damper one step DOWN */
+        int edge = (g_gndDampStandIdx <= 0);
+        if (!edge) g_gndDampStandIdx--;
+        g_gndDampStand = g_dampStandBank[g_gndDampStandIdx];
+        DampKeyAck((int)g_gndDampStandIdx + 1, edge); DampLog();
+    }
+    if (now[3] && !down[3]) {                       /* F4: standstill damper one step UP */
+        int edge = (g_gndDampStandIdx >= DAMP_STAND_STEPS - 1);
+        if (!edge) g_gndDampStandIdx++;
+        g_gndDampStand = g_dampStandBank[g_gndDampStandIdx];
+        DampKeyAck((int)g_gndDampStandIdx + 1, edge); DampLog();
+    }
+    if (now[4] && !down[4]) {                       /* F5: the FIXED damper, all of it */
+        g_gndDampGripMode = 1;
+        g_dampGripIdx = 4; DampApplyGrip();
+        g_gndDampStandIdx = DAMP_STAND_STEPS - 1;
+        g_gndDampStand = g_dampStandBank[g_gndDampStandIdx];
+        DampKeyAck(3, 0); DampLog();
+    }
+    if (now[5] && !down[5]) {                       /* F6: back to what he drives today */
+        g_gndDampGripMode = 0;
+        g_gndDampMoveAbs = 0;                       /* the percent path, i.e. move_pct = 50 */
+        g_dampGripIdx = 4;
+        g_gndDampStand = 0;                         /* whatever the arithmetic produces: 4399 */
+        g_gndDampStandIdx = 1;
+        DampKeyAck(5, 0); DampLog();
+    }
+    for (i = 0; i < 6; i++) down[i] = now[i];
+}
+
+/* v7.90. The preset bank's keys. One key per preset, each ASSERTING a whole feel, and the wheel
+   answers with as many pulses as the preset's number - so the acknowledgement itself says which
+   of the five he is now in, rather than merely that a key arrived. A press is logged even when it
+   changes nothing (0x2C + 0x2D), because a press that produced no row is a press the module never
+   saw, which is a different fault from a preset he could not feel.
+
+   A preset press also clears the ground channel's I/O override to the preset's own value. Without
+   that, an O pressed earlier in the drive would keep the channel silent through every later preset
+   press - a key that does nothing, which is the worst kind. */
+static void PresetSelect(int idx)
+{
+    if (idx < 0 || idx >= GND_PRESETS) return;
+    g_presetCur   = (LONG)(idx + 1);
+    PresetApply(idx);
+    g_gndOverride = g_gndOn ? 1 : 0;
+    if (g_gndAckMag > 0) {
+        /* One pulse per RUNG, not per preset number: with two ladders the ninth preset would
+           otherwise pulse for a second and a half, which is long enough to be felt as an effect
+           rather than an acknowledgement. F1..F5 pulse 1..5 as before; U I O P pulse 1..4. He
+           knows which key he pressed - what the ack has to tell him is that the module saw it
+           and which rung it landed on. The log row 0x2C still carries the true preset number. */
+        int rung = idx < 5 ? idx + 1 : idx - 4;
+        g_gndAckPat = 2;                       /* count the pulses                        */
+        g_gndAck    = (LONG)rung * 20;         /* 20 ticks = 160 ms each, out and back    */
+    }
+    Log(K_INIT, 0x2C, (DWORD)g_presetCur, (DWORD)g_gndOptDeg, (DWORD)g_gndFalloff);
+    /* v7.95 0x32 - BOTH AXES AS THEY NOW STAND, in one row. Without it a debrief cannot say which
+       breakaway a return verdict was given on, which is the exact confusion this build removes. */
+    Log(K_INIT, 0x32, (DWORD)g_curBreak, (DWORD)g_curRetK, (DWORD)g_gndSatK);
+    Log(K_INIT, 0x33, (DWORD)(LONG)(g_gndLastKmh * 100.0f),
+        (DWORD)(LONG)(g_gndLastSatMult * 1000.0f),
+        (DWORD)((g_gndSpdOn ? 1u : 0u) | ((DWORD)g_gndCurveKey << 8)));
+    Log(K_INIT, 0x2D, (DWORD)g_gndBend, (DWORD)g_gndPostRatio, (DWORD)g_gndSatK);
+    /* v7.92: the damper half of the preset. Its own row rather than crowded into the two above,
+       because a log code that changes meaning between builds is a trap already paid for here. */
+    Log(K_INIT, 0x31, (DWORD)g_gndDampMovePct, (DWORD)g_gndDampSlip,
+        (DWORD)(LONG)(g_gndLastGrip * 10000.0f));
+}
+
+/* DOES AN ARMED F-KEY BANK OWN THIS KEY? Then a ground preset bound to the same key stays silent,
+   because one press doing two of OUR things is a drive that answers the wrong question.
+   A function of its own, and not three lines inside the poll loop, so a host test can ask it
+   about every key without a keyboard - the poll itself calls GetAsyncKeyState and cannot be.
+
+   v811: F1..F6 belong to the damper ladders while those are armed.
+   v814: F1..F3 belong to the roll bank while THAT is armed.
+   v816: F4..F6 belong to the CRASH bank while that is armed - the line v814 forgot. The crash bank
+         was added on F4..F6 in the same build as the roll bank, and only the roll bank was given
+         its guard. Found 2026-09-30 before ours-035 was driven: the deployed ini binds preset 4 to
+         F4 and preset 5 to F5, so F5 would have capped the crashes AND swapped the steering to the
+         old reference (breakaway 4 deg instead of 9, SAT 5000 instead of 7875, damper slip 0) for
+         the rest of the drive. The wheel answered with the crash bank's pulses, because
+         PollCrashKeys runs after this and writes the acknowledgement last - so nothing would have
+         told him that a second thing had changed.
+
+   Refused here rather than in the ini, because the ini is written by three different scripts and
+   any one of them could put the key back. */
+static int FKeyOwnedByBank(int k)
+{
+    if (g_gndDampKeys && k >= 0x70 && k <= 0x75) return 1;   /* the damper ladders, F1..F6 */
+    if (g_rollKeys    && k >= 0x70 && k <= 0x72) return 1;   /* the roll bank, F1..F3      */
+    if (g_crashKeys   && k >= 0x73 && k <= 0x75) return 1;   /* the crash bank, F4..F6     */
+    if (g_rangeKeys   && k >= 0x70 && k <= 0x74) return 1;   /* v822 debug range keys, F1..F5 */
+    return 0;
+}
+
+static void PollPresetKeys(void)
+{
+    static int down[GND_PRESETS];
+    int i;
+    for (i = 0; i < GND_PRESETS; i++) {
+        int k = (int)g_presetKey[i];
+        int now;
+        if (k < 1 || k > 254) { down[i] = 0; continue; }
+        if (FKeyOwnedByBank(k)) { down[i] = 0; continue; }
+        now = KeyDown(k);
+        if (now && !down[i]) PresetSelect(i);
+        down[i] = now;
+    }
+}
+
+/* v7.88. The same two-key shape for the IMPULSE channel - K asserts it on, L asserts it off -
+   so the A/B that settled the ground channel's question can settle this one inside one drive.
+   The answer is in the wheel because there is nowhere else: he is driving and Mafia pauses the
+   moment it loses focus. Logged on every press (0x2A), even one that changes nothing, so a press
+   the module never saw is distinguishable from a change he could not feel. */
+static void ImpulseSetEnabled(LONG want)
+{
+    g_impOverride = want ? 1 : 0;
+    if (g_gndAckMag > 0) {
+        g_gndAckPat = want ? 0 : 1;
+        g_gndAck    = want ? 20 : 25;
+    }
+    Log(K_INIT, 0x2A, (DWORD)g_impOverride, (DWORD)g_impulseKick, (DWORD)g_impWitness);
+}
+
+static void PollImpulseKeys(void)
+{
+    static int downOn = 0, downOff = 0;
+    int on  = KeyDown((int)g_impKeyOn);
+    int off = KeyDown((int)g_impKeyOff);
+    if (on  && !downOn)  ImpulseSetEnabled(1);
+    if (off && !downOff) ImpulseSetEnabled(0);
+    downOn = on; downOff = off;
+}
+
 /* GLOB->CAR HUNT (diagnostic, kept for cross-check): the collision-loop hook (0x5E2061) is not firing this session, but the
    global at 0x65115C IS populated. Hunt a car struct reachable from it by signature:
    +0x2A0C = speed in [0.05,40], +0x38B0 = steer in [-1.2,1.2], +0x2A18 = world X (|..|>1).
@@ -3368,8 +6589,8 @@ static void PollFeelKeys(void)
          0xDC       the state:   speed x100, spring, damper - "standing" vs "moving" is a
                                  different question from "which effect", and he said so */
     static DWORD s_markTick = 0; static int s_burst = 0, s_lastKind = -1;
-    int like = (GetAsyncKeyState(0x76) & 0x8000) != 0;  /* VK_F7 = "this is what I want" */
-    int nope = (GetAsyncKeyState(0x77) & 0x8000) != 0;  /* VK_F8 = "this is wrong"       */
+    int like = KeyDown(0x76);  /* VK_F7 = "this is what I want" */
+    int nope = KeyDown(0x77);  /* VK_F8 = "this is wrong"       */
     int fired = (like && !downLike) ? 0xCF : ((nope && !downNope) ? 0xD4 : 0);
     if (fired) {
         DWORD now = GetTickCount();
@@ -3393,6 +6614,19 @@ static DWORD WINAPI SnapThread(LPVOID p)
     for (;;) {
         Sleep(SNAP_MS);
         PollMarks();
+        PollGroundKeys();
+        PollImpulseKeys();
+        PollPresetKeys();
+        PollDamperKeys();
+        PollRollKeys();
+        PollCrashKeys();
+        PollRangeKeys();
+        /* The hunt runs HERE and not in the FFB thread: it walks 16 KB of the actor through
+           VirtualQuery-guarded reads, which is a few milliseconds, and the FFB thread has an
+           8 ms tick to keep. Once a second, and it stops scanning the moment it has a pointer
+           that still passes its signature. */
+        if ((cyc % 20u) == 0u) VehHunt();
+        if ((cyc % 5u)  == 0u) LogModelInputs();   /* 4 Hz - enough to see them move */
         if (PROFILE_ENABLE) PollFeelKeys();
         DWORD car = GetCarPtr();   /* v7.1: car from the glob, not the (dead) hook */
         if (car) {
@@ -3819,6 +7053,79 @@ static DWORD WINAPI FFBThread(LPVOID p)
             }
         }
 
+        /* ---- the ground channel's own setup, once, then its ini once a second ----
+           The detour is installed from the FFB thread rather than from DllMain: the game's code
+           is certainly mapped by the time forces are being computed, and a patch attempted too
+           early is the kind of failure that reports success. The result is logged either way -
+           `a=0x68, b=1` means the call site was this build's and the redirect took.
+
+           0x68 AND NOT 0xE0, which is what this line carried when it was written: 0xE0 on the
+           INIT channel is already the v7.41 impulse veto (`:5717`), and a code with two producers
+           is what cost the v7.64 rollback - 1091 records read as one thing when 10 of them were
+           ([[tear-guard-refuted]], [[log-field-trap]]). One code, one meaning.
+
+           0x69 / 0x6A are the heartbeat, and they fire every second whether or not the channel
+           did anything: `reads` staying at 0 with a valid `veh` pointer is a different failure
+           from `veh` never arriving, and both are invisible in the wheel. */
+        {
+            static int   s_gndInit = 0;
+            static DWORD s_gndIni  = 0;
+            if (!s_gndInit) {
+                s_gndInit = 1;
+                GroundReadIni();
+                Log(K_INIT, 0x68, (DWORD)PatchVehicleTick(), VA_TICK_CALL, (DWORD)g_gndOn);
+                /* Which key is live this session, in the log, because the answer "he pressed it
+                   and nothing happened" has two causes and only one of them is the channel. */
+                Log(K_INIT, 0x6C, (DWORD)g_gndKeyOn, (DWORD)g_gndKeyOff, (DWORD)g_gndAckMag);
+                /* v7.90: the preset bank AS LOADED, one pair of rows each. Without this, a drive
+                   where he says "the third one" can only be read against whatever the ini says
+                   today - and the ini is edited between drives, sometimes during them. */
+                {
+                    int pi;
+                    for (pi = 0; pi < GND_PRESETS; pi++) {
+                        Log(K_INIT, 0x2E, (DWORD)(pi + 1), (DWORD)g_presetKey[pi], (DWORD)g_presetOpt[pi]);
+                        Log(K_INIT, 0x2F, (DWORD)g_presetBend[pi], (DWORD)g_presetFall[pi], (DWORD)g_presetSatK[pi]);
+                    }
+                }
+                s_gndIni = now;
+            } else if ((now - s_gndIni) > 1000u) {
+                s_gndIni = now;
+                GroundReadIni();          /* live tuning: edit the ini, feel it next second */
+                /* v7.90: which preset is live, every second. A press logs 0x2C once; this row is
+                   what lets ANY stretch of the drive be attributed, including the stretch before
+                   he pressed anything and any stretch where a press was missed. */
+                Log(K_INIT, 0x30, (DWORD)g_presetCur, (DWORD)g_gndOptDeg, (DWORD)g_gndBend);
+                /* v7.95: the two axes beside it, every second, so a stretch can be attributed to
+                   a PAIR rather than to the last key pressed. */
+                Log(K_INIT, 0x32, (DWORD)g_curBreak, (DWORD)g_curRetK, (DWORD)g_gndSatK);
+                /* v7.96: the speed curve as it stood this second - the speed it read, the
+                   multiplier it produced x1000, and whether the curve is on at all. Without
+                   this row a verdict on the steering weight cannot be attributed to a speed,
+                   which is the whole question the curve exists to answer. */
+                Log(K_INIT, 0x33, (DWORD)(LONG)(g_gndLastKmh * 100.0f),
+                    (DWORD)(LONG)(g_gndLastSatMult * 1000.0f),
+                    (DWORD)((g_gndSpdOn ? 1u : 0u) | ((DWORD)g_gndCurveKey << 8)));
+                Log(K_INIT, 0x69, (DWORD)g_gndReads, g_vehTick,
+                    (DWORD)(LONG)(g_gndLastLoad * 10000.0f));
+                Log(K_INIT, 0x6A, (DWORD)g_gndCalls, (DWORD)g_gndAirTicks,
+                    (DWORD)(LONG)g_gndLastForce);
+            }
+        }
+
+        /* ---- DID THE DEVICE TAKE THE LAST FORCES? If not, take the wheel back. --------------
+           Drive ours-019 ended with thirty-five seconds of a wheel that received nothing while
+           this loop went on computing. The refusals are counted in SetMag; this is the only place
+           that acts on them, it is rate-limited, and it never runs unless the refusals are
+           CONSECUTIVE - a single failure during a mode change is not a lost device. */
+        {
+            static DWORD s_lastRecov = 0;
+            DWORD nowR = GetTickCount();
+            if (RecoverDue(g_effFailN, s_lastRecov, nowR)) {
+                s_lastRecov = nowR;
+                DeviceRecover();
+            }
+        }
+
         /* ---- v7.32-DOR: read the wheel back, every tick, before anything else ----
            Unconditional on purpose. The car pointer gates every FORCE in this loop, but the
            wheel has a position whether or not he is seated, and a range test wants the menu
@@ -4036,8 +7343,8 @@ static DWORD WINAPI FFBThread(LPVOID p)
             /* gog-patcher: through TruckX now, which is the same 1.0f for a car (it returns on
                !g_heavy before touching the trim) and the trim-scaled surplus for a truck. */
             float springX = TruckX(HEAVY_SPRING_X);
-            LONG springCoeff = (LONG)((K_CENTER_DI * centerFactor
-                                     + K_HISPEED_DI * hiSpeedFactor) * springX);
+            (void)centerFactor; (void)hiSpeedFactor;   /* SpringCoeffFor recomputes them */
+            LONG springCoeff = SpringCoeffFor(speedKmh, springX, g_gndOn && g_gndSat);
 
             /* ---- Damper: heavy->moving (by 10 km/h)->heavy again at highway ---- */
             float dampFade = Clampf(speedKmh / DAMP_FADE_KMH, 0.0f, 1.0f);
@@ -4069,13 +7376,12 @@ static DWORD WINAPI FFBThread(LPVOID p)
                bit-identical to the build that had none of these controls. */
             float cdS = PctF(g_pctDampStatic);
             float cdM = PctF(g_pctDampMoving);
-            float hiScale  = (float)pf->dampMoving / (float)K_DAMP_DI_MOVING;
             float dStatic  = pf->dampStatic  * hvS * cdS * tdS;
             float dMoving  = pf->dampMoving  * hvM * cdM * tdM;
-            float dHispeed = K_DAMP_DI_HISPEED * hiScale * hvM * cdM * tdM;
-            LONG dampCoeff = (LONG)(dStatic
-                             + (dMoving  - dStatic) * dampFade
-                             + (dHispeed - dMoving) * hispeedDampF);
+            (void)dampFade; (void)hispeedDampF;   /* DamperCoeffFor recomputes both */
+            LONG dampCoeff = DamperCoeffFor(speedKmh, dStatic, dMoving,
+                                            g_gndOn && g_gndGate, GroundGate(),
+                                            g_gndLastGrip);
 
             /* ---- v7: heading + yaw rate this tick (bump detection + F1 share it) ----
                read the FULL matrix once: heading (m6,m8) for F1, m[7]=roll + m[1]=pitch for F2 */
@@ -4166,7 +7472,7 @@ static DWORD WINAPI FFBThread(LPVOID p)
                          0x7FFFFFFF when the heading was not readable
                      c = speed x100 */
                 if (g_qpcHz > 0.0) {
-                    static float rx[32], ry[32], rt[32];
+                    static float rx[IMP_RING], ry[IMP_RING], rt[IMP_RING];
                     static int   rn = 0;
                     static LARGE_INTEGER s_impPrev;
                     static int   s_impHave = 0;
@@ -4191,10 +7497,29 @@ static DWORD WINAPI FFBThread(LPVOID p)
                        position noise. 0xA1 records the veto, so a phantom that was PREVENTED
                        leaves a trace - otherwise the fix would be indistinguishable from the
                        channel simply going quiet. */
-                    if (s_impPend && (now - s_impPendT) >= IMP_CONFIRM_MS) {
-                        float ds = spd - s_impPendSpd;
-                        if (ds < 0.0f) ds = -ds;
-                        if (ds >= IMP_SPD_CONFIRM && g_inVehicle
+                    if (s_impPend && (now - s_impPendT)
+                            >= (DWORD)(g_impWitness ? g_impConfirm2 : (LONG)IMP_CONFIRM_MS)) {
+                        /* v7.88. Two witnesses, one of which is honest. The POSITION one is the
+                           default; the old speedometer one stays reachable through
+                           impulse_witness = 0 so the two can be driven against each other. */
+                        float ds;
+                        int agreed;
+                        if (g_impWitness) {
+                            float vA = ImpRingSpeed(rx, ry, rt, rn, IMP_WIT_SPAN);
+                            float vB = ImpRingSpeed(rx, ry, rt, s_impPendCount, IMP_WIT_SPAN);
+                            /* -1 means the ring cannot answer yet. Log a 0 rather than a
+                               difference of two error codes, which would read as a measurement. */
+                            ds = (vA < 0.0f || vB < 0.0f) ? 0.0f : (vA - vB);
+                            if (ds < 0.0f) ds = -ds;
+                            agreed = ImpulseConfirmed(rx, ry, rt, s_impPendCount, rn,
+                                                      IMP_WIT_SPAN,
+                                                      (float)g_impDvMin * 0.01f);
+                        } else {
+                            ds = spd - s_impPendSpd;
+                            if (ds < 0.0f) ds = -ds;
+                            agreed = (ds >= IMP_SPD_CONFIRM);
+                        }
+                        if (agreed && g_inVehicle
                             && (!kickUntil || kickIsTap)) {
                             LONG mag = (LONG)(IMP_FORCE_A * s_impPendDv + IMP_FORCE_B);
                             if (mag > MAX_MAG) mag = MAX_MAG;
@@ -4214,18 +7539,69 @@ static DWORD WINAPI FFBThread(LPVOID p)
                         s_impPend = 0;
                     }
 
-                    rx[rn & 31] = wx; ry[rn & 31] = wy; rt[rn & 31] = dtSec;
+                    /* ---- v7.88 A PAUSE MUST NOT LOOK LIKE AN IMPULSE -------------------------
+                       While the game is in a menu or loading, the car object is not updated: the
+                       position stands still and our clock keeps running. When play resumes, a
+                       velocity window that SPANS that gap sees the whole speed appear in one
+                       step, which is the largest impulse a drive can contain and means nothing.
+                       The ring is RESET rather than the still ticks being skipped - skipping was
+                       measured offline and it loses real crashes, because a car stopped against a
+                       wall also holds bit-identical positions. A reset only refuses to compare
+                       across the gap. */
+                    {
+                        static float s_lastX = 0.0f, s_lastY = 0.0f;
+                        static float s_stillSec = 0.0f;
+                        static int   s_haveLast = 0;
+                        if (s_haveLast && wx == s_lastX && wy == s_lastY) {
+                            s_stillSec += dtSec;
+                        } else {
+                            /* The RESET itself now lives in the ring fill below, where the gap is
+                               measured as the accumulated time between two real updates - one
+                               rule instead of two that could disagree. This half only records
+                               it, because a reset nobody logged is a reset nobody can count. */
+                            if (s_stillSec >= 0.20f)
+                                Log(K_INIT, 0x2B, (DWORD)(LONG)(s_stillSec * 1000.0f), 0, 0);
+                            s_stillSec = 0.0f;
+                        }
+                        s_lastX = wx; s_lastY = wy; s_haveLast = 1;
+                    }
+
+                    /* ONE SAMPLE PER GAME UPDATE. The accumulator carries the wall time of every
+                       poll since the last real movement, so a skipped update lengthens the next
+                       sample's dt instead of inserting a zero-travel one. */
+                    {
+                        static float s_accDt = 0.0f;
+                        static float s_prevX = 0.0f, s_prevY = 0.0f;
+                        static int   s_havePrevPos = 0;
+                        s_accDt += dtSec;
+                        if (s_havePrevPos && wx == s_prevX && wy == s_prevY) goto imp_done;
+                        s_prevX = wx; s_prevY = wy; s_havePrevPos = 1;
+                        /* A GAP LONGER THAN ANY UPDATE IS NOT AN UPDATE. A menu, a load or a
+                           standstill leaves the position untouched for a long stretch; the first
+                           movement afterwards would otherwise be written as one sample carrying
+                           seconds of dt, and every window containing it would be nonsense. Start
+                           the ring again instead - the samples either side are never compared. */
+                        if (s_accDt > 0.25f) {
+                            rn = 0;
+                            s_impPend = 0;
+                            s_accDt = 0.0f;
+                            goto imp_done;
+                        }
+                        rx[rn & IMP_RMASK] = wx; ry[rn & IMP_RMASK] = wy;
+                        rt[rn & IMP_RMASK] = s_accDt;
+                        s_accDt = 0.0f;
+                    }
                     rn++;
                     if (rn > IMP_VEL_WIN + IMP_LAG) {
-                        int iNow = (rn - 1) & 31;
-                        int iOld = (rn - 1 - IMP_VEL_WIN) & 31;
-                        int jNow = (rn - 1 - IMP_LAG) & 31;
-                        int jOld = (rn - 1 - IMP_LAG - IMP_VEL_WIN) & 31;
+                        int iNow = (rn - 1) & IMP_RMASK;
+                        int iOld = (rn - 1 - IMP_VEL_WIN) & IMP_RMASK;
+                        int jNow = (rn - 1 - IMP_LAG) & IMP_RMASK;
+                        int jOld = (rn - 1 - IMP_LAG - IMP_VEL_WIN) & IMP_RMASK;
                         float tA = 0.0f, tB = 0.0f;
                         int k;
                         for (k = 0; k < IMP_VEL_WIN; k++) {
-                            tA += rt[(rn - 1 - k) & 31];
-                            tB += rt[(rn - 1 - IMP_LAG - k) & 31];
+                            tA += rt[(rn - 1 - k) & IMP_RMASK];
+                            tB += rt[(rn - 1 - IMP_LAG - k) & IMP_RMASK];
                         }
                         if (tA > 0.0f && tB > 0.0f) {
                             float ax = (rx[iNow] - rx[iOld]) / tA;
@@ -4295,7 +7671,8 @@ static DWORD WINAPI FFBThread(LPVOID p)
                                    named here too so the LOG does not fill with the position
                                    discontinuities that walking produces.
                                    0xDE (K_FIRE): a = force, b = |dV| x1000, c = angle deg x100. */
-                                if (g_impulseKick && g_inVehicle
+                                if ((g_impOverride >= 0 ? g_impOverride : g_impulseKick)
+                                    && g_inVehicle
                                     && dv >= IMP_KICK_MIN
                                     && (now - s_impLastKick) >= IMP_REFRACT_MS
                                     && !s_impPend) {
@@ -4308,6 +7685,8 @@ static DWORD WINAPI FFBThread(LPVOID p)
                                         s_impPendDv    = dv;
                                         s_impPendSpd   = spd;
                                         s_impPendAlong = along;
+                                        s_impPendCount = rn;   /* where the ring stood, for the
+                                                                  position witness at confirm */
                                         Log(K_INIT, 0xA0, (DWORD)(LONG)(dv * 1000.0f),
                                             (DWORD)(LONG)(spd * 100.0f), 0);
                                     } else if (!kickUntil || kickIsTap) {
@@ -4409,11 +7788,45 @@ static DWORD WINAPI FFBThread(LPVOID p)
             float fM = pf->fricMoving * (g_fricTrim * 0.01f) * hvM;
             LONG fricSat = (LONG)Clampf((fS + (fM - fS) * dampFade) * dampMult,
                                         0.0f, (float)MAX_STEER_SAT);
+            /* v7.8: friction fades with the tyre load too. It is zero for a car on the reference
+               profile, so this line cannot move the approved feel - but a truck on F4 carries
+               real scrub, and scrub through wheels that are in the air is exactly the weight he
+               asked to have disappear. The damper keeps its thin floor; friction does not need
+               one, because friction is what resists TURNING, which is the feel being removed. */
+            if (g_gndOn && g_gndGate) fricSat = (LONG)((float)fricSat * GroundGate());
             g_fricNow = fricSat;   /* what the F5 "I like this" marker records */
             if (!g_inVehicle) { finalSpring = 0; finalDamp = 0; fricSat = 0; }
+            /* THE BENCH-ONLY CENTRING PULSE. Off in every shipped ini; see g_gndCentreMs. It is
+               placed after the `!g_inVehicle` line on purpose - the wheel has to be centred while
+               the game is still in its menus, which is exactly when there is no vehicle. */
+            if (g_gndCentreMs > 0) {
+                static DWORD s_centreT0 = 0;
+                DWORD nowC = GetTickCount();
+                if (!s_centreT0) { s_centreT0 = nowC; Log(K_INIT, 0x1F, (DWORD)g_gndCentreMs, 0, 0); }
+                if ((DWORD)(nowC - s_centreT0) < (DWORD)g_gndCentreMs) {
+                    finalSpring = K_CENTER_DI;
+                    finalDamp   = K_DAMP_DI_STATIC / 2;
+                } else if (g_gndCentreMs > 0 && (DWORD)(nowC - s_centreT0) < (DWORD)g_gndCentreMs + 200u) {
+                    Log(K_INIT, 0x1F, 0, 1, 0);        /* the pulse is over, and it says so */
+                }
+            }
+            /* THE BENCH HOLDS THE WHEEL so a recorded route replays into the car it was recorded
+               for - see g_gndHoldCentre. Lifted for the seconds the self-test is measuring, which
+               are the only seconds where the wheel's own movement is the answer. */
+            if (g_gndHoldCentre && !g_gndSelfActive) {
+                finalSpring = K_CENTER_DI;
+                if (finalDamp < K_DAMP_DI_MOVING) finalDamp = K_DAMP_DI_MOVING;
+            }
             SetSpring(finalSpring);
             SetDamper(finalDamp);
             SetFriction(fricSat);
+
+            /* THE COEFFICIENTS AS SENT, one tick in eight. 0xDC carries the same three numbers but
+               only on a mark key, so run 016 could not answer "did the damper stay heavy while I
+               was in the air" from a drive where he pressed nothing. This row makes the whole
+               model checkable off ONE log: spring must be 0 with the channel on, the damper must
+               follow the gate down to the airborne floor, and friction must follow it to zero. */
+            LogCoeffsSent(finalSpring, finalDamp, fricSat);
 
             /* ---- v7.4g F2 road wallow: ROLL(m7, load-envelope) + PITCH(m1, slip-gated) ---- */
             float rollHP = 0.0f, pitchHP = 0.0f;
@@ -4444,10 +7857,26 @@ static DWORD WINAPI FFBThread(LPVOID p)
                     float rollF = 0.0f;
                     if (Absf(rollHP) > F2R_DEADZONE) {
                         float e = Absf(rollHP) - F2R_DEADZONE;         /* magnitude past dz */
+                        /* v813: THE ROLL GAIN IS A LIVE PERCENT, and it comes down. His verdict on
+                           ours-034: curbs... the effect needs to be reduced somehow, because now
+                           it is too large in amplitude - and measured on that drive, what is called
+                           curbs is 98% THIS term ([[the-curb-effect-is-almost-entirely-roll]]).
+                           Cutting the ceiling was priced and REFUSED by the measurement: at cap
+                           2000 the share of rows pinned there rises from 54% to 67%, i.e. quieter
+                           AND flatter, which is the opposite of what he asked for. Cutting the
+                           gain is the only move that lowers the force and gives the gradation
+                           back - at 25% nothing reaches the ceiling at all.
+                           v813 SHIPPED 25 and ours-035 REFUSED IT: at gain 25 the roll was, in
+                           his words, weak. The 25 was a prediction (655/2625, from a damper A/B),
+                           and it delivered 44% of the original's mean force rather than 25%,
+                           because the original is clipped at its ceiling in 54% of rows. Since
+                           v818 the original (100) is the base again and the two ways down live on
+                           F2/F3 - see g_rollBankGain. `road_roll_gain_pct` still moves it live. */
                         float mag = e * F2R_GAIN1;                     /* below-knee slope  */
                         if (e > F2R_KNEE_E)
                             mag = F2R_KNEE_E * F2R_GAIN1 + (e - F2R_KNEE_E) * F2R_GAIN2;
-                        if (mag > F2R_CAP) mag = F2R_CAP;
+                        mag *= (float)g_rollGainPct * 0.01f;
+                        if (mag > (float)g_rollCap) mag = (float)g_rollCap;
                         float sgn = (rollHP > 0.0f ? F2R_SIGN : -F2R_SIGN);
                         rollF = sgn * mag * rollEnv;
                     }
@@ -5426,22 +8855,40 @@ static DWORD WINAPI FFBThread(LPVOID p)
                            today's behaviour rather than slamming the wheel on a glitch. */
                         if (entrySpd > ENTRY_SANITY_MS) entrySpd = spdEma;
                         float spdForce = (entrySpd > ENTRY_GATE_MS) ? entrySpd : spdEma;
-                        LONG mag = Mul(RefCrashForce(excess, spdForce), g_pctCrash);  /* M1 #2 */
+                        /* v813: the mod's own trim goes FIRST and the user's slider second, so
+                           `crash = 100` still means "the mod as designed". See g_crashTrimPct -
+                           and note it is applied here rather than inside RefCrashForce for the
+                           reason written in that function: its third caller is a DETECTOR. */
+                        /* v820: the trim follows the TRUE entry speed - see CrashTrimFor. With
+                           no ramp (F4, or an ini without the keys) it is g_crashTrimPct exactly. */
+                        float trueEntry = TrueEntryKmh(now);
+                        LONG trimNow = CrashTrimFor(trueEntry, g_crashTrimPct,
+                                                    g_crashRampLo, g_crashRampHi);
+                        /* v825: capped at the v814 ceiling BEFORE the slider (M1 #2), so the
+                           ceiling scales with it - see CrashKickMag. magRef is the same kick at
+                           100%, and it is what the ceiling guard below reads. */
+                        LONG magRef;
+                        LONG mag = CrashKickMag(RefCrashForce(excess, spdForce), trimNow, &magRef);
+                        /* v820 0x3B, one per kick: a = the true entry speed km/h x100, b = the
+                           trim applied, c = the magnitude sent. What the next drive is judged by. */
+                        Log(K_INIT, 0x3B, (DWORD)(LONG)(trueEntry * 100.0f), (DWORD)trimNow,
+                            (DWORD)mag);
                         /* v7.58 DIAG 0xEE: everything needed to audit this change from the
                            log alone - what the car arrived with, what the old code would have
                            used, whether the gate applied, and both magnitudes side by side.
                            a = entrySpd*100, b = spdEma*100,
                            c = magOld | magNew<<16 (both <= MAX_MAG 25000, so both fit).
-                           Fork: magOld goes through the SAME `Mul(..., g_pctCrash)` as magNew,
-                           so the two fields stay comparable at any slider setting and both
-                           equal upstream's numbers at 100%. Comparing a scaled magNew against
-                           an unscaled magOld would read as an entry-gate effect that is really
-                           just the slider. */
+                           Fork: the two fields go through the SAME arithmetic, so they stay
+                           comparable at any slider setting. v825: both are now the magnitude
+                           AT 100% (CrashKickMag's guardMag) - the slider is the same factor on
+                           both sides, and at 400% a scaled 100000 no longer fits 16 bits. At
+                           100% the row is exactly the v824 one. */
                         {
-                            LONG magOld = Mul(RefCrashForce(excess, spdEma), g_pctCrash);
+                            LONG magOld;
+                            CrashKickMag(RefCrashForce(excess, spdEma), trimNow, &magOld);
                             Log(K_INIT, 0xEE, (DWORD)(LONG)(entrySpd * 100.0f),
                                 (DWORD)(LONG)(spdEma * 100.0f),
-                                ((DWORD)magOld & 0xFFFF) | (((DWORD)mag & 0xFFFF) << 16));
+                                ((DWORD)magOld & 0xFFFF) | (((DWORD)magRef & 0xFFFF) << 16));
                         }
                         /* ---- v7.63: a MAXIMUM-force kick has to be corroborated ----
                            0xEC is written at every ceiling fire whether it vetoes or not, so
@@ -5449,9 +8896,11 @@ static DWORD WINAPI FFBThread(LPVOID p)
                              b = ratio x1000 (0xFFFFFFFF = no history, guard stood down)
                              c = the world's step at this tick x100
                              d = the magnitude, with bit 31 set if the kick was VETOED
-                                 (MAX_MAG is 25000, so the top bit is free) */
+                                 (at most MAX_MAG x the slider, so the top bit is free)
+                           v825: WHICH kicks count as ceiling kicks is decided at 100% (magRef),
+                           never by the slider - memory\slider-vs-detector.md. */
                         int ceilVeto = 0;
-                        if (mag >= MAX_MAG && g_ceilAgree > 0.0f) {
+                        if (magRef >= MAX_MAG && g_ceilAgree > 0.0f) {
                             float ratio = CeilRatio(&g_ceil);
                             ceilVeto = CeilVeto(&g_ceil, g_ceilAgree);
                             Log(K_INIT, 0xEC,
@@ -5623,7 +9072,16 @@ static DWORD WINAPI FFBThread(LPVOID p)
                            speed baseline MAG_MIN + spd*MAG_SPD_SCALE - exactly the reference's
                            feedback value at the speed the crash happened, which is what he asked
                            for, with no invented constant and no overshoot. */
-                        LONG mag = Mul(RefCrashForce(0.0f, pendEntry), g_pctCrash);  /* M1 #2 */
+                        /* v820: the same speed-following trim as the main kick */
+                        float trueEntryB = TrueEntryKmh(GetTickCount());
+                        LONG trimNowB = CrashTrimFor(trueEntryB, g_crashTrimPct,
+                                                     g_crashRampLo, g_crashRampHi);
+                        /* v825: the same CrashKickMag as the main kick - the ceiling scales with
+                           the slider, and magRefB (the kick at 100%) is what the guard reads. */
+                        LONG magRefB;
+                        LONG mag = CrashKickMag(RefCrashForce(0.0f, pendEntry), trimNowB, &magRefB);
+                        Log(K_INIT, 0x3B, (DWORD)(LONG)(trueEntryB * 100.0f), (DWORD)trimNowB,
+                            (DWORD)mag);
                         /* ---- v7.46: the bypass kick follows the wheel's OWN weight ----
                            Feedback on the v7.43 drive described the scrub jab as too strong at
                            the end of a handbrake slide. Every attempt to DETECT and suppress
@@ -5658,9 +9116,12 @@ static DWORD WINAPI FFBThread(LPVOID p)
                            nothing about whether the guard helps: its only veto was undone.
                            Tested on `mag` BEFORE dampMult, which is what makes it the same
                            population as the normal branch - after the slide scaling a ceiling
-                           kick can read as 2287 and would never be looked at. */
+                           kick can read as 2287 and would never be looked at.
+                           v825: and on the magnitude AT 100% (magRefB), for the same reason one
+                           level up - after the crash slider a ceiling kick can read as anything
+                           from 0 to 100000, and the slider must not choose the population. */
                         int bypVeto = 0;
-                        if (mag >= MAX_MAG && g_ceilAgree > 0.0f) {
+                        if (magRefB >= MAX_MAG && g_ceilAgree > 0.0f) {
                             float ratio = CeilRatio(&g_ceil);
                             int veto = CeilVeto(&g_ceil, g_ceilAgree);
                             Log(K_INIT, 0xEC,
@@ -5807,8 +9268,47 @@ static DWORD WINAPI FFBThread(LPVOID p)
                 /* v7.52: this is the ONE continuous SetMag in the file, and the small-range
                    kick floor below must never touch it. A floor on a channel that idles
                    near zero would turn silence into a permanent hum. */
+                /* ---- THE GROUND CHANNEL, 2026-09-13 - his two tasks, in this order ----
+                   1. our own forces fade with the tyre load, so the wheel goes empty when the
+                      wheels leave the ground - the one thing the stock game does better;
+                   2. SAT rides on top and carries the steering weight, the self-steer and the
+                      counter-steer. Both default ON because this is a test build. */
+                {
+                    float gndLoad = 1.0f;
+                    /* The detour's pointer when the game's own FFB tick runs, and the hunted one
+                       when it does not - which, since run 016, is always. Neither is trusted
+                       blind: GroundRead re-validates every field it uses, every tick. */
+                    float gnd = GroundForce(g_vehTick ? g_vehTick : g_vehFound, &gndLoad);
+                    if (g_gndOn && g_gndGate) total *= gndLoad;
+                    total += gnd;
+                    /* The key's answer, in the only channel he can hear while driving. ON is one
+                       push out and back; OFF is two short taps - different shapes, so the wheel
+                       says WHICH state he is in, not merely that a key arrived. Deliberately
+                       OUTSIDE the load gate above: it must arrive when the channel was just
+                       switched off, and with the front wheels in the air too. */
+                    if (g_gndAck > 0) {
+                        float m = (float)g_gndAckMag;
+                        if (g_gndAckPat == 0) {
+                            total += (g_gndAck > 10) ? m : -m;            /* ON: one nudge      */
+                        } else if (g_gndAckPat == 2) {
+                            /* v7.90: COUNT the pulses - preset N answers with N nudges out and
+                               back, 160 ms each. The count IS the answer: it says which of the
+                               five he is now in, not merely that a key arrived. */
+                            LONG phase = (g_gndAck - 1) % 20;
+                            total += (phase >= 10) ? m : -m;
+                        } else if (g_gndAck > 19 || (g_gndAck <= 13 && g_gndAck > 7)) {
+                            total += m;                                   /* OFF: tap, gap, tap */
+                        }
+                        g_gndAck--;
+                    }
+                }
                 g_continuous = 1;
-                SetMag((LONG)Clampf(total, -(float)MAX_MAG, (float)MAX_MAG));
+                /* v825: the ceiling scales with the largest slider in the sum (ContinuousCap);
+                   at 100% everywhere it is MAX_MAG exactly, the v824 clamp to the bit. */
+                {
+                    float cap = ContinuousCap();
+                    SetMag((LONG)Clampf(total, -cap, cap));
+                }
                 g_continuous = 0;
             }
 
@@ -5900,6 +9400,14 @@ static int SelectBuild(void)
     }
     return -1;
 }
+
+/* The developers' own force feedback, compiled beside this file as a second translation unit
+   (src\spike\origffb_probe.c, built with -DORIGFFB_AS_MODE so its DllMain is dropped). One
+   symbol, because everything else in that file is static. See the mode 2 block in DllMain.
+   Declared only in that build: the offline test hosts compile this file on its own. */
+#ifdef ORIGFFB_AS_MODE
+void OrigFfbStart(void);
+#endif
 
 BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID rr)
 {
@@ -6029,6 +9537,42 @@ BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID rr)
                 && dmbi.State == MEM_COMMIT && !(dmbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)))
                 siteBytes = *(volatile DWORD *)VA_CAR_PROBE;
             Log(K_INIT, 0x50, base, pid, siteBytes);
+        }
+        /* ---- MODE 2: THE DEVELOPERS' OWN FORCE FEEDBACK, his ask of 2026-09-14 --------------
+         * the option to also enable the basic feedback for the owners of new
+         * Direct Drive wheels to try. The game's own feedback exists, the project proved it and switched
+         * it on ([[game-has-its-own-ffb]]); that code is origffb_probe.c, linked into this .asi
+         * as a second translation unit rather than shipped as a second module, because both take
+         * the wheel DISCL_EXCLUSIVE and two exclusive owners is a fight.
+         *
+         * WE STOP HERE when it is chosen. Not "stop sending forces" - stop entirely: no hook
+         * into the car probe, no FFB thread, no device of ours. Anything less would leave this
+         * module holding the wheel the other one is trying to take, which is the one failure
+         * mode that looks like a broken wheel rather than a mod that is off.
+         *
+         * After the singleton claim on purpose, so a second copy of the .asi cannot start it
+         * twice; before every patch, so a mode 2 install touches no game code at all.
+         *
+         * 0x32: a = the mode, b = 1 if the other side was started. */
+        {
+            char modeIni[MAX_PATH];
+            FFBIniPath(modeIni);
+            g_ffbMode = (LONG)GetPrivateProfileIntA("ffb", "ffb_mode", (UINT)-1, modeIni);
+        }
+        if (g_ffbMode == 2) {
+            /* b says whether the other side is actually in this binary. It is a separate
+               translation unit, so a build made without it (the offline test hosts, which compile
+               this file alone) must say "asked for, not available" rather than quietly running as
+               legacy - the difference between those two is the whole of a bug report. */
+            /* 0x39, not 0x32: 0x32 is the two-axes row, written every second since v7.95. */
+#ifdef ORIGFFB_AS_MODE
+            Log(K_INIT, 0x39, (DWORD)g_ffbMode, 1, 0);
+            LogFlush();
+            OrigFfbStart();
+            return TRUE;
+#else
+            Log(K_INIT, 0x39, (DWORD)g_ffbMode, 0, 0);
+#endif
         }
         PatchWithCall(VA_CAR_PROBE, (DWORD)HookCar, 8);
         /* K_INIT 0x52: a=first byte at hook site after patch (expect 0xE8 = call). */

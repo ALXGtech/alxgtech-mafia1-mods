@@ -477,7 +477,8 @@ static int  fp_SlRef(int row){ return FPREF[row]-FPLO[row]; }
 /* no second mark on this page - every row here has exactly one value worth marking */
 static int  fp_SlAlt(int row){ (void)row; return -1; }
 static const slider_ops FP_SLIDER_OPS = {
-    fp_SlGet, fp_SlSet, fp_SlMax, fp_SlStep, fp_SlRef, fp_SlAlt, FP_ID_SLIDER0 };
+    fp_SlGet, fp_SlSet, fp_SlMax, fp_SlStep, fp_SlRef, fp_SlAlt, FP_ID_SLIDER0,
+    NULL /* every mark, as before */ };
 
 /* ---- ONE CENTRED COLUMN, like the H-shifter page --------------------------------------------
  * As of 2026-08-07, the mod was centred as a whole, the way the H-shifter is centred too. The
@@ -501,6 +502,11 @@ static const slider_ops FP_SLIDER_OPS = {
    shipped with, found the same way. */
 #define FPC_HINT   (FP_X+560)
 #define FPW_HINT   (FP_R-FPC_HINT)
+/* the camera keys' heading and its sentence, on one line since 2026-10-01 (see PageFpvCreate) */
+#define FP_KEYS_HEAD   "CAMERA KEYS - OPTIONAL"
+#define FP_KEYS_HEAD_W 300
+#define FP_KEYS_NOTE   "Keyboard only in this version - F1-F6 for example. Click a binding, then " \
+                       "press a key."
 
 static void PageFpvCreate(HWND h){
     int y,i;
@@ -543,8 +549,11 @@ static void PageFpvCreate(HWND h){
        second copy of that control's truth, and it goes stale the moment nobody checks it. */
     MkTextF(h,"150 up, 3 back, 31 to the left, near plane 42, level",FPC_LABEL+232,y+6,520,16,
             FP_ID_NOTE,g_fSmall,0);
-    y+=34;
+    y+=32;
 
+    /* 27 px a row, the Force feedback page's pitch, not 30. The window is as tall as its tallest
+       tab and this one was it (724 px against FFB's 680) - Alex, 2026-10-01, translated: "why so
+       much empty space under the presets? Compress the utility vertically, it is too tall." */
     for(i=0;i<FP_NROW;i++){
         MkText(h,FPNAME[i],FPC_LABEL,y+5,170,20,0);
         fp_slider[i]=MkSliderOps(h,FPC_SLIDER,y,FPW_SLIDER,26,FP_ID_SLIDER0+i,&FP_SLIDER_OPS);
@@ -554,7 +563,7 @@ static void PageFpvCreate(HWND h){
         MkTextF(h,"cm",FPC_BOX+62,y+7,24,16,FP_ID_NOTE,g_fSmall,0);
         fp_hint[i]=MkTextF(h,FPHINT[i],FPC_HINT,y+7,FPW_HINT,16,FP_ID_HINT0+i,
                            g_fSmall,0);
-        y+=30;
+        y+=27;
     }
     y+=6;
 
@@ -574,7 +583,7 @@ static void PageFpvCreate(HWND h){
     MkTextF(h,"Locks to horizon is the recommended setting for immersion - it is what he drove. "
               "Rolling with the car is closer to a real head and harder to watch.",
             FPC_SLIDER,y,FP_R-FPC_SLIDER,16,FP_ID_NOTE,g_fSmall,0);
-    y+=26;
+    y+=22;
 
     /* The interface fix used to sit here, under the horizon. It moved to the TOP of the page on
        2026-08-14 at Alex's instruction - see the block in PageFpvCreate. */
@@ -606,17 +615,19 @@ static void PageFpvCreate(HWND h){
        was reported as too much text, needing to be made simpler. The one fact worth the space is that a
        wheel button cannot be bound - he tried, and fp_camera.c opens no DirectInput at all - and
        it fits in the same line that says how to use the row. */
-    MkTextF(h,"OPTIONAL: KEYS TO ADJUST THE CAMERA WHILE DRIVING",
-            FPC_LABEL,y,FP_W,22,FP_ID_SECT,g_fSection,0);
-    y+=26;
-    MkTextF(h,"Keyboard only in this version - F1-F6 for example. Click a binding, then press a key.",
-            FPC_LABEL,y,FP_W,18,FP_ID_NOTE,g_fSmall,0);
-    y+=24;
+    /* ONE LINE since 2026-10-01: the heading and its sentence side by side, the way the range on
+       the Force feedback page has shared its line since 2026-08-05 - "a section title with a
+       full-width line of prose under it costs 46 px to say what fits on one". The heading lost
+       "to adjust ... while driving" to make the room; the rows under it say what each key does. */
+    MkTextF(h,FP_KEYS_HEAD,FPC_LABEL,y,FP_KEYS_HEAD_W,22,FP_ID_SECT,g_fSection,0);
+    MkTextF(h,FP_KEYS_NOTE,FPC_LABEL+FP_KEYS_HEAD_W+10,y+5,FP_W-FP_KEYS_HEAD_W-10,18,FP_ID_NOTE,
+            g_fSmall,0);
+    y+=28;
     for(i=0;i<FK_N;i++){
         MkText(h,FKNAME[i],FPC_LABEL,y+4,170,20,0);
         fp_keyBtn[i]=MkBtn(h,"click to set",FPC_SLIDER,y,240,24,FP_ID_KEY0+i);
         MkBtn(h,"clear",FPC_SLIDER+250,y,80,24,FP_ID_KEYCLR0+i);
-        y+=28;
+        y+=26;
     }
     y+=8;
 
@@ -639,7 +650,7 @@ static void PageFpvCreate(HWND h){
         char t[8]; wsprintfA(t,"%d",i+1);
         fp_slotBtn[i]=MkBtn(h,t,FPC_LABEL+310+i*54,y,48,28,FP_ID_SLOT0+i);
     }
-    y+=40;
+    y+=34;                     /* the Force feedback page's preset row is 34 too */
 
     FpvLoadIni();
     fp_RefreshSlots();

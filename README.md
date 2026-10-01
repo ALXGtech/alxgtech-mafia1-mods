@@ -20,9 +20,10 @@ So now Mafia drives like a proper sim game at last!
 Three mods for **Mafia: The City of Lost Heaven (2002)** - the OG Mafia 1 - in a single small program.
 
 > **Built and tested for the GOG release, v1.3 build 16073 - any language edition.** All eight of
-> them ship an identical `Game.exe`, so any one of them will do. **The Steam release and every
-> other version or store have not been tested, and compatibility with them is not guaranteed.**
-> The program checks your `Game.exe` and tells you when it is not the build this was made for.
+> them ship an identical `Game.exe`, so any one of them will do. **Your Steam version may work too -
+> it has not been tested, so give it a try.** Other versions and stores are untested. The program
+> checks your `Game.exe` and tells you when it is not the build this was made for, and everything it
+> installs can be undone.
 
 Too long to read? This is all of it:
 
@@ -33,7 +34,7 @@ Too long to read? This is all of it:
 5. Switch on the mods you want, inside the program, and play.
 
 **Then set them up - [it is worth five minutes](#-setting-each-mod-up).** Especially the force
-feedback, which needs to be told your wheel's rotation range before it can feel right.
+feedback - tell it your wheel's rotation range.
 
 | | mod | in this release |
 |:--:|---|---|
@@ -45,6 +46,18 @@ feedback, which needs to be told your wheel's rotation range before it can feel 
 Everything below is detail: what each mod does, what it writes into your game folder, and how to
 take it back out.
 
+## ✨ What's new in 2.0
+
+- **A new force feedback.** The steering weight now comes from the front tyres instead of a
+  centring spring: the wheel gets heavier with speed and goes light when the front tyres lose
+  grip. Road texture such as cobbles has a slider of its own, and crashes follow how fast you hit.
+- **More headroom** - every force slider goes up to 400%, for wheels weaker than the direct drive
+  base it was tuned on.
+- **A fix for the gearbox dropping into automatic by itself.** Not yet confirmed on a long drive in
+  manual - if it still happens to you, please open an issue.
+
+Updating from 1.4.3? Switch the Force Feedback mod off and on again once, with Mafia closed.
+
 ## Before you install
 
 - **Back up your saves.** They are in `<game>\savegame\`. The installer records every file it
@@ -52,7 +65,8 @@ take it back out.
 - **Version.** Built for the GOG release of Mafia v1.3 (build 16073). All eight language
   editions ship an identical `Game.exe`, so any of them will do; it was play-tested on the
   English one. The utility checks your `Game.exe` and says so when it is not the build
-  everything was tested on. Any other version or store release is at your own risk.
+  everything was tested on. The Steam version is untested but may work - give it a try; any other
+  version or store release is at your own risk.
 - **Other mods.** Compatibility with other mods has not been tested. The bundled ASI loader
   will load any other `.asi` mods you have, which is intended but untested territory.
 - **Antivirus.** `ALXGtech Mafia 1 Mods.exe` is an unsigned executable that writes files into a game
@@ -64,11 +78,11 @@ take it back out.
 Four mods in one window, each switched on or off from its own tab. Three of them ship today;
 the fourth says when it will not.
 
-**🎮 Force feedback.** A complete DirectInput8 force set driven from the car's live state:
-centering that follows speed, a damper at a standstill, lightening as the tyres let go, curbs,
-tram rails, the roll of going off the road, and impacts. It is built for modern direct drive
-wheels, by people who drive on them, because the original does not behave the way a wheel
-should in 2026. The stock game does knock the wheel on a collision; this replaces that with a
+**🎮 Force feedback.** A complete DirectInput8 force model driven from the car's live state:
+steering weight from the front tyres that grows with speed, a damper at a standstill, lightening
+as the tyres let go, curbs, road texture, the roll of the body, and impacts. It is built for
+modern direct drive wheels, by people who drive on them, because the original does not behave the
+way a wheel should in 2026. The stock game does knock the wheel on a collision; this replaces that with a
 full force model. Settings are re-read while the game runs, so a change on the Force Feedback
 tab is felt on the next corner and not after a restart.
 
@@ -121,22 +135,20 @@ must have seen your wheel at least once.
 
 ### 🎮 Force Feedback
 
-![The Force Feedback tab: wheel selection, rotation range, the strength sliders and the wheel-weight column](docs/img/tab-force-feedback.png)
+![The Force Feedback tab: the wheel and its rotation range on top, the sliders in two columns below](docs/img/tab-force-feedback.png)
 
-Everything on this tab is **live** - it reaches the game as you move the slider, no restart.
+Everything on this tab is **live** - it reaches the game as you move a slider, no restart.
 
-1. **Plug the wheel in, then open the tab.** If it says the wheel is not plugged in, press
-   **Refresh list** and pick your wheel from the dropdown. **Test - push the wheel** confirms the
-   mod is talking to it.
-2. **Press `ON: recommended in-game FFB settings`.** That writes the game's own handling and force
-   feedback values this mod was tuned against, into your Mafia profile. Skip it and you are tuning
-   against a different baseline than the one every number here assumes.
-3. **Set `WHEEL ROTATION RANGE` to whatever your wheel's own driver is set to.** This is the one
-   setting you must not guess. It changes nothing on the wheel - it tells the mod what to serve.
-   Everything was tuned at **600 degrees**, and if your wheel's range is yours to choose, 600 is
-   the recommendation. Eight values are offered - 90, 360, 540, 600, 720, 900, 1080 and 1440 - and
-   the tab is honest about which is which: some were actually driven and confirmed, the rest are
-   derived by formula and have never been driven. It says so under the selector.
+1. **Plug the wheel in, then open the tab.** The tab picks the first force feedback wheel it finds;
+   if you have several, choose yours from the dropdown, and press **Refresh list** if it is
+   missing. **Test - push the wheel** gives it a short push from the utility - run it with Mafia
+   closed.
+2. **The game's own force feedback settings are set for you.** Switching the mod on writes the
+   values it was tuned against into your Mafia profile, and the button then reads
+   `ON: recommended in-game FFB settings`. Press it to give the profile back exactly what it had.
+3. **Set `WHEEL ROTATION RANGE` to whatever your wheel's own driver is set to.** It changes nothing
+   on the wheel - it tells the mod what to serve. **600 is the default and the recommendation**:
+   everything was tuned there.
 
 ![The Simagic base everything was tuned against: a 12 N.m Alpha EVO at 55 percent, 600 degrees of rotation, mechanical effects nearly off](docs/img/wheel-settings-reference.png)
 
@@ -147,48 +159,44 @@ mechanical effects left almost off, because the mod is what puts damping and wei
 have to copy it and the mod never reads it; it is here so "tuned at 600 degrees" has a picture
 behind it.
 
-Then the sliders. **100% is the shipped feel**, and the tall mark on each one is the recommended
-value - 100 everywhere except **Gunfire, which is 0**. Two reasons, and the second one matters more
-on this build. It was set to 0 because the effect fires for every shot from your car, your allies'
-and your enemies' alike, and a jolt you did not cause feels like the wheel malfunctioning. And on
-the GOG release the channel has nothing to act on anyway: it reads a counter that never moves
-there - measured across a whole drive - which is the same reason being shot at is not felt at all.
-The tab's own note describes the effect rather than this, so the slider is more dormant than it
-looks.
+Then the sliders. **100% - the tall mark - is the shipped feel**, and every force slider goes up to
+**400%** for a weaker wheelbase. `Total effects (not affecting dampers)` on top scales every force
+at once. The left column sets how strong each effect is; the right one, how heavy and how damped
+the wheel is.
 
-| group | what it is |
+| slider | what it is |
 |---|---|
-| Overall strength | less of everything, in one control |
-| Crashes and rams | the reference; 100 is the ceiling |
-| Hitting objects | crates, bins, booths, hydrants |
-| Pedestrians | what it says |
-| Road surface | curbs, tram rails, offroad |
-| Slide feel | the slip-angle effect |
-| `Centering spring`, `Parking damper`, `Driving damper` | the wheel-weight column: how heavy the wheel feels standing still and moving |
+| Crashes and rams, Hitting objects, Pedestrians | the hits - objects are crates, bins and hydrants |
+| Gunfire | recommended 0 - see below |
+| Roll and curbs | body rock over curbs |
+| Road texture | cobbles and fine grain |
+| Steering weight | how heavy the wheel is |
+| Build-up with speed | `Light`, `Reference` or `Heavy` - how the weight grows with speed |
+| Breakaway | where the grip goes - 9 degrees of slip by default |
+| Parking damper, Driving damper | the wheel standing still, and moving |
+| Lightness in a slide | how much of the damper goes in a full slide - 78% by default |
 
-Trucks have their own damper pair that multiplies the car values. Those are arithmetic and nobody
-has driven them, which the tab says out loud. **Back to default settings** puts every slider back
-to 100%.
+**Gunfire is at 0 on purpose.** The effect fires for every shot from your car, not just yours, and a
+jolt you did not cause feels like the wheel malfunctioning. On the GOG release the channel has
+nothing to act on anyway: it reads a counter that never moves there, which is the same reason being
+shot at is not felt at all.
 
-**Presets 1, 2, 3.** The one lit green is the one being edited, and every value on the page goes
-into it. `Import preset...` and `Export preset...` move them between machines.
+**Back to default settings** puts every slider back to its tall mark, Gunfire to 0. **Presets 1, 2,
+3**: the one lit green is the one being edited; `Import preset...` and `Export preset...` move them
+between machines.
 
-**If nothing is reaching the wheel, the tab tells you which of the three it is.** There is a lamp
-and a line at the bottom, and it is the first thing to look at before changing any slider:
+**If nothing is reaching the wheel, the lamp at the top of the tab says why** - look there first:
 
 | the lamp says | what it means |
 |---|---|
-| driving effects are on, and names your wheel | it is working |
-| the game is not running, and names the wheel it last saw | the mod is fine, Mafia is not open |
-| no force is reaching the wheel | the mod is loaded and something is stopping it - check the wheel is plugged in and picked |
+| `Driving effects on` your wheel | it is working |
+| `Game not running - last seen on` your wheel | the mod is fine, Mafia is not open |
+| `Not run here yet` | switch the mod on and start Mafia once |
+| `No force is reaching the wheel` | something is stopping it - check the wheel is plugged in and picked |
 
-The same area says so when the mod ended up holding a **different wheel from the one you chose**,
-which happens if the chosen one was unplugged at the moment the game started. It names both, so a
-wheel that has gone quiet is not a mystery.
-
-**`ON: recommended in-game FFB settings` is reversible, per save profile.** Pressing it again puts
-back exactly what that profile had before - not some factory default - and anything you changed
-yourself in the meantime is left alone.
+If the mod ended up holding a **different wheel from the one you chose** - because the chosen one
+was unplugged when the game started - the wheel row says `NOT your choice` and names the one it
+took.
 
 ### 🕹️ H-shifter
 
@@ -297,7 +305,7 @@ when the game starts. Both say so on screen.
 | GOG v1.3 build 16073, English | tested, this is the build everything was measured on |
 | GOG v1.3, Russian | installed and started on a fresh install: byte-identical `Game.exe`, all three mods loaded |
 | GOG v1.3, the other six languages | identical `Game.exe`, so expected to work, not play-tested |
-| Steam and other releases | untested. The utility will say it does not recognise the build |
+| Steam and other releases | untested - Steam may work, give it a try. The utility will say if it does not recognise the build |
 | other mods | untested |
 
 Only one `dinput8.dll` can live in a game folder. If you already have an ASI loader there, the
@@ -305,6 +313,9 @@ existing one is backed up before it is replaced, and put back on uninstall.
 
 ## Known issues
 
+- At race-track speed the wheel can occasionally take a full-strength crash jolt on an open
+  straight with nothing to hit. Not fixed in this release.
+- The force feedback was tuned on a direct drive base; other wheels are untested.
 - A car ramming you from behind is barely felt. It is measured rather than guessed: no channel
   we have reports it yet, and loosening the impact gate to catch it brings back false kicks that
   were worse. It is a known bug and it is not fixed in this release.
@@ -332,11 +343,15 @@ Pull requests and forks are welcome, including porting the technique to a differ
 
 - [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader) by ThirteenAG, bundled
   as `dinput8.dll`. See `THIRD-PARTY.md`. This is the only third-party code that ships here.
+- **[GTAV Manual Transmission](https://github.com/ikt32/GTAVManualTransmission)** by ikt32. **The
+  force feedback model partly uses its logic**: the steering weight from the front tyres' slip
+  angle and load, faded when a tyre spins or locks, with no centring spring - and some of its
+  default values. It was rebuilt here on Mafia's own data, and none of its code was copied.
 - Everything else is this project's own work.
 
 ### Inspiration - looked at, learned from, not used
 
-The three projects below solved problems this mod also has, and seeing that they could be solved
+The two projects below solved problems this mod also has, and seeing that they could be solved
 was worth a great deal. **None of their code is in this repository or in anything it ships.** Each
 was read as a reference for what is possible, and the implementation here was worked out
 independently and came out different. They are named because they deserve to be, not because
@@ -345,10 +360,6 @@ anything was taken.
 - **[WidescreenFixesPack - Mafia](https://github.com/ThirteenAG/WidescreenFixesPack/releases/tag/mafia)**
   by ThirteenAG. The reference for the wide-screen interface problem. Our correction is a different
   approach and shares no code with it.
-- **[GTAV Manual Transmission](https://github.com/ikt32/GTAVManualTransmission)** by ikt32. A
-  different game and a different engine, and what we read it for was its **vehicle physics** - how
-  it handles slip angles in particular. Our force feedback works those out its own way, from Mafia's
-  own car state, and shares no code with it.
 - **[Mafia First Person Shooter Mod](https://www.moddb.com/mods/first-person-camera/downloads/mafia-first-person-shooter-mod)**.
   The reference that a first-person view in this game is achievable at all. Ours is done completely
   differently and shares no code with it.

@@ -165,6 +165,15 @@ static int g_posBtn[NPOS];           /* button index on that device, -1 = unboun
 static int g_posGear[NPOS]={-1,0,1,2,3,4,5,6};
 static int g_shiftEnable=0, g_closedLoop=1;
 static int g_dikUp=0x1E, g_dikDown=0x2C, g_dikMode=0, g_modeBtn=-1, g_modeDev=0, g_modeHold=0;
+/* v1.1: hold the transmission mode by writing the engine's own two fields instead of tapping the
+   mode key. See WrByteOk for the decompilation. `mode_write = 0` returns to the key press. */
+static int g_modeWrite=1;
+/* v1.2: with a LATCHING mode switch, put the mode back whenever the game disagrees with the
+   switch's position. That is what actually answers the 2026-08-15 report - the v1.1 write could
+   not fire in his case at all, because nothing produced a mode action while he was just driving.
+   Only consulted when mode_hold is 1: a momentary button has no position to enforce.
+   `mode_enforce = 0` restores every build before 2026-09-14. */
+static int g_modeEnforce=1;
 static int g_holdMs=40, g_gapMs=60, g_retryMs=1200, g_neutralDelayMs=1100;
 static DWORD g_vaGamePtr=0x63788C; static int g_gearOfs=0x5D0, g_modeOfs=0x53C;
 
@@ -216,6 +225,8 @@ static void ReadConfig(void){
     g_dikUp       = IniNum("shift","gearup_dik",0x1E);
     g_dikDown     = IniNum("shift","geardown_dik",0x2C);
     g_dikMode     = IniNum("shift","mode_dik",0);
+    g_modeWrite   = IniNum("shift","mode_write",1);
+    g_modeEnforce = IniNum("shift","mode_enforce",1);
     IniBind("mode_btn",&g_modeDev,&g_modeBtn);
     g_modeHold    = IniNum("shift","mode_hold",0);
     g_holdMs      = IniNum("shift","hold_ms",40);
@@ -496,6 +507,31 @@ static int RdOk(DWORD addr,DWORD *out){
     if(IsBadReadPtr((void*)addr,4)) return 0;
     *out=*(DWORD*)addr; return 1;
 }
+/* ---- v1.1 2026-09-14: WRITING the transmission mode instead of pressing a key --------------
+ * FOUND IN THE DECOMPILATION, after the telemetry said the flips are not ours. The engine keeps
+ * the driver's CHOICE in a byte on the player object and re-derives the gearbox mode from it:
+ *
+ *     gog-Game-exe.c:199904   *(bool *)(frame + 0x53c) = *(char *)(player + 0xadb) == '\0';
+ *     gog-Game-exe.c:218309   toggle: player+0xADB is inverted, frame+0x53C set to its opposite
+ *     gog-Game-exe.c:219070   the object's initialiser writes player+0xADB = 0
+ *
+ * So 0xADB is "the box is manual" and 0x53C is "the box is automatic right now". Any moment the
+ * engine re-initialises that object - and the log says it happens with the car STOPPED and in
+ * first gear - the choice byte goes back to 0 and the mode follows it into automatic.
+ *
+ * That is why pressing the mode key cannot be the fix: the key INVERTS 0xADB, so a module that
+ * holds the mode by tapping the key is fighting a byte it keeps flipping back and forth. Writing
+ * both fields is what the engine's own toggle does, minus the inversion.
+ *
+ * The player object is `[car + 0xE4]`, which is how the engine identifies it at 199890 - the same
+ * 0xE4 the FFB module already walks.
+ */
+static int WrByteOk(DWORD addr,BYTE v){
+    if(addr<0x10000||addr>=0x80000000) return 0;
+    if(IsBadWritePtr((void*)addr,1)) return 0;
+    *(BYTE*)addr=v;
+    return *(BYTE*)addr==v;          /* read back: a write that did not land is not a write */
+}
 static DWORD g_car=0,g_frame=0;
 /* 0x96 - WHICH LINK OF THE CHAIN BROKE, logged on change only.
    Same defect report as 0x95: this returned a bare 0 for five different reasons, so a dead
@@ -526,8 +562,37 @@ static int ReadGear(int *gear,int *mode){
     ChainWhy(0,car,v);
     return 1;
 }
+/* ---- THE AUTOMATIC-FLIP INSTRUMENT, 2026-08-15 -----------------------------------------------
+ *
+ * Alex, on the build he had just approved: he starts a game in manual and at some point the game
+ * is in AUTOMATIC without him choosing it. He named four candidates and measured none of them -
+ * the A/M mode button, the clutch, the moment of a gear change, or this module forcing a gear -
+ * and asked for telemetry and one drive rather than a guess.
+ *
+ * The existing 0xA2 record already fires on a mode change, but it carries only the new mode: it
+ * says THAT the box flipped and nothing about what was happening when it did. So these two stamps
+ * are kept, and the transition record below reports the AGE of each in milliseconds. That is what
+ * separates the four candidates from one another in a log read afterwards:
+ *
+ *   a mode key we sent ourselves   -> sinceModeKey is small
+ *   the flip landed inside a shift -> sinceShift is small
+ *   neither                        -> the game did it on its own, and the button bits say whether
+ *                                     his hand was on anything at that moment
+ *
+ * 0xFFFFFFFF means "never happened this session", which is a different claim from "a long time
+ * ago" and has to stay distinguishable - [[gearbox-silent-failures]] is the precedent where this
+ * module ran inert for eighteen minutes and said nothing at all.
+ */
+static DWORD g_lastModeKeyMs=0, g_lastShiftMs=0;
+
+static DWORD AgeMs(DWORD stamp){
+    return stamp ? (GetTickCount()-stamp) : 0xFFFFFFFFu;
+}
+
 static void Emit(int dik,int dir,int target,int cur){
     L(0xA1,(DWORD)dik,(DWORD)dir,(DWORD)(target+GBIAS),(DWORD)(cur+GBIAS));
+    if(dik==g_dikMode&&dir==0) g_lastModeKeyMs=GetTickCount();
+    else                       g_lastShiftMs=GetTickCount();
     g_holdDik=dik; Sleep(g_holdMs); g_holdDik=0; Sleep(g_gapMs);
 }
 /* THE DECISION CORE LIVES IN gearbox_logic.h AND IS TESTED WITHOUT THE GAME.
@@ -543,8 +608,35 @@ static void Emit(int dik,int dir,int target,int cur){
 static void BuildCfg(GBCfg *c){
     for(int i=0;i<GB_NPOS;i++){ c->posDev[i]=g_posDev[i]; c->posBtn[i]=g_posBtn[i]; c->posGear[i]=g_posGear[i]; }
     c->modeDev=g_modeDev; c->modeBtn=g_modeBtn; c->modeHold=g_modeHold;
+    c->modeEnforce=g_modeEnforce;
     c->dikUp=g_dikUp; c->dikDown=g_dikDown; c->dikMode=g_dikMode;
     c->neutralDelayMs=g_neutralDelayMs; c->retryMs=g_retryMs; c->closedLoop=g_closedLoop;
+}
+
+/* v1.1: assert MANUAL the way the engine's own toggle does - the choice byte on the player
+ * object and the live mode on the frame, both, and neither inverted. Returns 1 only when the
+ * write is READ BACK correctly, so the caller can fall through to the key press when the chain
+ * is not what we think it is. Logged either way (0xA9): a fix that silently does nothing is the
+ * failure mode this module has already had once ([[gearbox-silent-failures]]).
+ *   a = 1 wrote, 0 refused   b = the player object   c = mode before   d = mode after
+ */
+/* v1.2: BOTH DIRECTIONS. It wrote manual only, which was every caller it had; enforcement of a
+   latching switch can ask for either, and a switch left in the automatic position must be served
+   as faithfully as one left in manual. The two fields are the engine's own pair and the polarity
+   is its own: `player+0xADB` non-zero means the driver chose MANUAL, `frame+0x53C` non-zero means
+   the box IS automatic - so they are opposites, and writing them the same way round is the bug
+   this function exists to avoid. */
+static int ForceMode(int wantAuto,int modeNow){
+    DWORD player=0, after=0;
+    int okFlag, okMode;
+    if(!g_car||!g_frame) return 0;
+    if(!RdOk(g_car+0xE4,&player)||player<0x10000){ L(0xA9,0,player,(DWORD)modeNow,0); return 0; }
+    okFlag = WrByteOk(player+0xADB,(BYTE)(wantAuto?0:1));   /* the driver's CHOICE            */
+    okMode = WrByteOk(g_frame+(DWORD)g_modeOfs,(BYTE)(wantAuto?1:0)); /* the live mode         */
+    if(!RdOk(g_frame+(DWORD)g_modeOfs,&after)) after=0xFFFFFFFF;
+    L(0xA9,(DWORD)(okFlag&&okMode),player,(DWORD)((modeNow&0xFF)|((wantAuto?1u:0u)<<8)),
+      after&0xFF);
+    return okFlag&&okMode;
 }
 
 static DWORD WINAPI ShiftLoop(LPVOID p){
@@ -560,6 +652,15 @@ static DWORD WINAPI ShiftLoop(LPVOID p){
         if(ok&&g_car!=lastCar){ lastCar=g_car; GBInit(&st); }   /* a new vehicle knows nothing */
         if(ok&&(gear!=lastGear||mode!=lastMode)){
             L(0xA2,(DWORD)(gear+GBIAS),(DWORD)mode,g_car,g_frame);
+            /* THE EDGE, NOT THE LEVEL. 0 is manual, so any move away from 0 is the flip he
+               reported; the reverse edge is logged too, because "it went back by itself" would be
+               a different fault wearing the same face. lastMode starts at -99, so the first read
+               of a session is not reported as a transition. */
+            if(lastMode!=-99&&mode!=lastMode&&(mode==0||lastMode==0)){
+                L(0xA7,(DWORD)lastMode,(DWORD)mode,AgeMs(g_lastModeKeyMs),AgeMs(g_lastShiftMs));
+                L(0xA8,(DWORD)g_btnLo[0],(DWORD)g_btnLo[1],(DWORD)(gear+GBIAS),
+                       (DWORD)(st.pendAuto?1:0));
+            }
             lastGear=gear; lastMode=mode;
         }
         if(!g_shiftSeen){ Sleep(8); continue; }
@@ -578,8 +679,23 @@ static DWORD WINAPI ShiftLoop(LPVOID p){
         if(o.blockedAuto){ Sleep(50); continue; }
 
         if(o.act==GB_MODE_KEY){
-            L(0xA6,st.pendAuto?3:1,(DWORD)g_dikMode,(DWORD)(o.target+GBIAS),(DWORD)mode);
-            Emit(g_dikMode,0,gear,gear);
+            /* b carries the CAUSE and the direction now, not just the key: 1 the driver's own
+               control, 2 our engage-manual, 3 our enforcement of the switch position, and the
+               high byte is the mode being asked for. A log that cannot tell those apart cannot
+               answer "did the mod do this or did the game". */
+            L(0xA6,st.pendAuto?3:1,
+                   (DWORD)((g_dikMode&0xFF)|((DWORD)(st.modeCause&0xF)<<8)|
+                           ((DWORD)(o.wantAuto>0?1:0)<<12)),
+                   (DWORD)(o.target+GBIAS),(DWORD)mode);
+            /* v1.1: WRITE the two fields rather than tapping the key, when we can. See WrByteOk
+               for the decompilation this comes from. The key path stays as the fallback and as
+               the escape hatch (`mode_write = 0`), because a write into the engine's own object
+               is the more invasive of the two and this module ships to strangers.
+               THE KEY CANNOT SERVE A DIRECTION - it toggles, and the byte it toggles is the very
+               one being fought over - so it is only used when the write is refused or switched
+               off, and then only to ask for a change at all. */
+            if(!(g_modeWrite && ForceMode(o.wantAuto>0,mode)))
+                Emit(g_dikMode,0,gear,gear);
         } else if(o.act==GB_UP||o.act==GB_DOWN){
             int dir=(o.act==GB_UP)?1:-1, before=gear;
             Emit(dir>0?g_dikUp:g_dikDown,dir,o.target,before);

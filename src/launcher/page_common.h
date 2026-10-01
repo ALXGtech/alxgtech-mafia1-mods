@@ -192,6 +192,11 @@ static void PageHeader(HWND canvas,int tab){
     g_buildline[tab]=MkTextF(canvas,"",PageX(tab),10,PageW(tab),22,ID_BUILDLINE,g_fField,0);
 }
 
+/* page_ffb.h owns this, and like FpvWantedFov below it is declared here because the page is
+   included after this file: the settings write that has to follow a force feedback install (see
+   ToggleOn). */
+static void FfbAfterInstall(void);
+
 static void RefreshPage(int tab){
     char root[MAX_PATH],line[420];
     GameRoot(root);
@@ -266,6 +271,9 @@ static int ToggleOn(int tab){
        describe the folder rather than its own intentions. */
     if(g_loadFn[tab]) g_loadFn[tab]();
     RefreshPage(tab);
+    /* The settings file follows the install: the release hides the developers' hotkeys, and they
+       are off only once mafia_ffb.ini says so - a module with no file keeps its built-in keys. */
+    if(tab==LTAB_FFB) FfbAfterInstall();
     return ok&&g_errors==0;
 }
 

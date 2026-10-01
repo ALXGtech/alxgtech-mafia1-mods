@@ -4,6 +4,84 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses semantic
 versioning.
 
+## [2.0.0] - 2026-10-01
+
+A major version, on purpose. The force feedback is a new model of the road rather than a retune of
+the old one, and the utility no longer offers the old one: there is no "classic" switch and no old
+profiles. Whoever wants the 1.4.3 feel back installs 1.4.3, which stays on the Releases page.
+
+### Changed
+
+- **The force feedback is a new road model, tuned by driving.** Steering, damper, body roll, road
+  texture and crashes are one model built around the front tyres, instead of a set of separate
+  effects. It was tuned on a direct drive wheel at a rotation range of 600 degrees, and that
+  tuning is what 100% means on every slider.
+- **The wheel is centred by a tyre curve, not by a spring.** The centring is a self-aligning
+  torque worked out from the slip angle of the front tyres. It rises in a straight line to its
+  peak at 9 degrees of slip and fades in a straight line to nothing at 15.3 degrees, so the wheel
+  goes light as the front tyres let go. It acts from the first movement of the car, and it is the
+  only centring force there is: the spring is off. A caster self-steer, weak near the centre,
+  sits on top of it.
+- **The wheel gets heavier with speed.** That torque is scaled by a speed curve: 22% at 10 km/h,
+  34% at 20, 42% at 30, 60% at 50, 80% at 60, 100% at 70 km/h (43 mph), 122% at 80 and 190% at
+  110 km/h, in straight lines between those points and flat beyond the ends.
+- **The damper lets go in a slide.** It is firm at a standstill and has eased to a lighter moving
+  value by 10 km/h. At a full slide 78% of it is taken away, and in the air, where the tyres carry
+  no load, it drops to a light floor.
+- **Body roll and curbs are a quick knock, not a steady lean.** Only the fast rocking of the body
+  is felt; the steady lean is filtered out. Roll runs at 38% of its original strength with a
+  ceiling of its own, and sharp curbs also come through as pitch, full up to 60 km/h and easing to
+  60% from 110 km/h. Both switch off while the car is sliding and ease back in afterwards.
+- **Crashes follow the speed you hit at.** The force of a crash is built as before, from how hard
+  and how fast the hit was, up to a ceiling. What is new is a trim by the true speed at impact,
+  which is the highest speed of the last second and a half: 70% of the force up to 70 km/h
+  (43 mph), rising in a straight line to 100% at 90 km/h (56 mph). Slow crashes are gentler than
+  in 1.4.3; fast ones are not.
+- **Wheel rotation range: full force at 600 degrees and below, stronger centring above.** Nothing
+  is turned down for a smaller wheel any more, so 90, 360, 540 and 600 degrees all get the same
+  forces. Above 600 the centring (torque and caster) and the roll and pitch forces are raised by
+  the cube root of the range over 600: x1.063 at 720, x1.145 at 900, x1.216 at 1080 and x1.339 at
+  1440 degrees. Crashes, road texture and the dampers are the same at every range.
+- **Every slider runs from 0 to 400%, and 100% is the tuned reference.** A slider scales its whole
+  channel, ceiling included, so the shape that was tuned survives on a weaker or a stronger
+  setting. Gunfire is the one row whose recommended value is not 100: it stays at 0.
+
+### Added
+
+- **Road texture is a channel of its own, with its own slider.** Fine road detail such as cobbles
+  is built from how fast the front suspension moves, left wheel against right, and the roll and
+  curb slider never touches it.
+- **Sliders for the parts of the model that had none:** steering weight, and how much the damper
+  lets go in a slide.
+
+### Removed
+
+- **The 1.4.3 force feedback, and any switch back to it.** There is one model: no "classic" mode,
+  no old profiles and no mode for the game's own force feedback. 1.4.3 stays on the Releases page
+  for anyone who wants that feel.
+- **The Centering spring and Slide feel sliders.** The new model has no spring, and the older slide
+  effect that Slide feel scaled has no place in it.
+
+### Fixed
+
+- **The H-shifter could drop into automatic by itself.** The game works the gearbox mode out again
+  from a setting that its own start-up code clears; the mod now keeps the mode you chose. Not yet
+  confirmed on a long drive in manual.
+
+### Known limitations
+
+- Wheel ranges 540, 720, 1080 and 1440 degrees follow the range law above but were not driven;
+  90, 360, 600 and 900 degrees were.
+- At race-track speed the wheel can occasionally take a full-strength crash jolt on an open
+  straight with nothing to hit. It is recorded and not fixed in this release.
+- Developed and tested on a direct drive base. Other wheels are untested; the sliders, now up to
+  400%, are there for them.
+
+### For developers
+
+- The tuning hotkeys of the development builds, the letter keys and F1 to F6 that switched the
+  force feedback module between test settings, are off in the shipped module.
+
 ## [1.4.3] - 2026-08-15
 
 ### Fixed

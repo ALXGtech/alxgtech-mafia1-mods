@@ -26,6 +26,16 @@ static volatile LONG g_lastEffectHr = 1;
 
 static DWORD g_statusGen = 0;      /* bumped on every write, so the GUI can spot a dead .asi */
 
+/* v825: THE MODULE'S OWN VERSION, for the utility's lamp - "Driving effects on <wheel> - module
+   v825". Compiled straight from src\ffb\VERSION, the file tools\build-ffb.ps1 names the link
+   after, so the number the lamp shows and the name the binary was linked under are one number
+   and cannot drift apart (a second copy of it went stale twice before VERSION existed - see
+   tools\bench-mode.ps1). The file holds one integer and nothing else; the build scripts already
+   refuse anything that is not 3-4 digits, and a stray character here fails the compile loudly. */
+static const DWORD g_ffbVersion =
+#include "VERSION"
+    ;
+
 /* ---- tiny formatters. -nostdlib: no sprintf, and nothing here may pull one in. ---- */
 
 static int StCat(char *dst, int at, const char *s)
@@ -75,7 +85,8 @@ static void WriteFFBStatus(void)
 
     n = StCat(buf, n, "; written by mafia_ffb.asi - do not edit, every field is overwritten\r\n");
     n = StCat(buf, n, "[status]\r\n");
-    n = StCat(buf, n, "build=");
+    n = StCat(buf, n, "version=");      n = StCatU(buf, n, g_ffbVersion);
+    n = StCat(buf, n, "\r\nbuild=");
     n = StCat(buf, n, (g_buildIdx >= 0 && g_buildIdx < N_BUILDS)
                           ? g_builds[g_buildIdx].name : "unknown");
     n = StCat(buf, n, "\r\ndevice=");

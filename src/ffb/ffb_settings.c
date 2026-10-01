@@ -93,7 +93,11 @@ static DWORD g_settingsGen = 0;
    the log and the status file can now say 600 instead of "nothing declared". */
 static void ReadRange(const char *ini)
 {
-    LONG deg = (LONG)GetPrivateProfileIntA("ffb", "range", DOR_REF, ini);
+    LONG deg;
+    /* v822 debug: a range key he pressed wins over the file for the rest of the session - the
+       once-a-second re-read would otherwise put the ini's range back one second later */
+    if (g_rangeKeyUsed) return;
+    deg = (LONG)GetPrivateProfileIntA("ffb", "range", DOR_REF, ini);
     for (int i = 0; i < N_DOR_SLOTS; i++) {
         if (g_dorDegTab[i] == deg) {
             g_dorSlot = i;
@@ -187,6 +191,25 @@ static void ReadFFBSettings(void)
        approved, and leaves none of his 17 complaints with a kick behind it. 0 = fire the
        impulse kick immediately, i.e. exactly v7.66, for an A/B. See IMP_CONFIRM_MS. */
     g_impConfirm = (LONG)GetPrivateProfileIntA("ffb", "impulse_confirm", 1, ini);
+    /* v7.88. WHICH WITNESS CONFIRMS THE KICK. 1 = the speed measured from POSITION, which a torn
+       read of car+0x2A0C cannot move; 0 = the v7.67 speedometer veto, kept only so the two can be
+       driven against each other. The veto read the very field whose tearing produces the
+       phantoms, so it confirmed them instead of refusing: 53 kicks on drive ours-021, 51 with no
+       contact anywhere near. See [[impulse-phantoms-are-the-torn-speed-field]]. */
+    g_impWitness = (LONG)GetPrivateProfileIntA("ffb", "impulse_witness", 1, ini);
+    /* The confirmation threshold, m/s x100. 400 = 4.0 m/s across impulse_confirm2_ms, which at
+       200 ms is 2 g - beyond this engine's braking and trivial for a pole. */
+    g_impDvMin = (LONG)GetPrivateProfileIntA("ffb", "impulse_dv_min", 400, ini);
+    if (g_impDvMin < 50)   g_impDvMin = 50;
+    if (g_impDvMin > 3000) g_impDvMin = 3000;
+    g_impConfirm2 = (LONG)GetPrivateProfileIntA("ffb", "impulse_confirm2_ms", 300, ini);
+    if (g_impConfirm2 < 60)  g_impConfirm2 = 60;
+    if (g_impConfirm2 > 600) g_impConfirm2 = 600;
+    /* The in-game A/B keys for this channel: K on, L off. Same shape as the ground channel's
+       I and O, and out of the letter bank for the same reason - Windows maps letter keys by
+       POSITION, so they are the same physical keys on his Russian layout. */
+    g_impKeyOn  = (LONG)GetPrivateProfileIntA("ffb", "impulse_key_on",  0x4B, ini);
+    g_impKeyOff = (LONG)GetPrivateProfileIntA("ffb", "impulse_key_off", 0x4C, ini);
 
     /* Not a slider and not a percent multiplier on an output - this one scales the SURPLUS of
        the heavy-vehicle steering weight above 1.0, and its default is 0 rather than 100.

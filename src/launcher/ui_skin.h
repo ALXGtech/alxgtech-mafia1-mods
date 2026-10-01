@@ -26,6 +26,17 @@ static int  SLen(const char *s){ int n=0; while(s[n])n++; return n; }
 static void SCat(char *d,const char *s){ int n=SLen(d),i=0; while(s[i]) d[n+i]=s[i],i++; d[n+i]=0; }
 static void SCpy(char *d,const char *s){ int i=0; while(s[i]) d[i]=s[i],i++; d[i]=0; }
 static int  SEq(const char *a,const char *b){ int i=0; for(;;i++){ if(a[i]!=b[i]) return 0; if(!a[i]) return 1; } }
+/* does `h` contain `n`? Case-sensitive and deliberately so - the self-test uses it on wording,
+   where "Preset" and "preset" are different mistakes and both are worth naming. */
+static int  StrHas(const char *h,const char *n){
+    int i,j;
+    if(!n[0]) return 1;
+    for(i=0;h[i];i++){
+        for(j=0;n[j]&&h[i+j]==n[j];j++);
+        if(!n[j]) return 1;
+    }
+    return 0;
+}
 static int  Clamp(int v,int lo,int hi){ return v<lo?lo:(v>hi?hi:v); }
 static int  ParseInt(const char *s,int *out){
     int v=0,any=0,i=0;

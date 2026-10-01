@@ -75,9 +75,9 @@ static const build_info BUILDS[] = {
 #define PRIMARY_BUILD 0
 
 #define PAYLOAD_LOADER_MD5 "b8c51891352e3e7bfc2c30f2c903b46c"
-#define PAYLOAD_ASI_MD5    "c56669c45adf1b58ef06f8b666f33586"
+#define PAYLOAD_ASI_MD5    "95fe31934509d37dd9ffc9f0de9ce426"
 #define PAYLOAD_FP_MD5     "b34188416eea10f6cb111f298b73d943"
-#define PAYLOAD_GEARBOX_MD5 "bb8c01dbabfec6a6ffc4a95de40693d7"
+#define PAYLOAD_GEARBOX_MD5 "9ced50d3864600620e6638ae982c56a0"
 #define PAYLOAD_GBSETUP_MD5 "2567b875d826616b8cec9b10b3d30d29"
 
 /*
@@ -91,6 +91,46 @@ static const build_info BUILDS[] = {
  * hash and has to be added here, not assumed.
  */
 static const char *OUR_ASI_MD5[] = {
+    "95fe31934509d37dd9ffc9f0de9ce426",  /* rebuilt 2026-10-01 */
+    "03a197f7322e7a88120fa3668a9ac4c8",  /* rebuilt 2026-09-14 */
+    "5ff6fa72c343e43bfb64f698a628ca66",  /* rebuilt 2026-09-14 */
+    "c73c8ee375bcdec7be67c141ea47f2fa",  /* rebuilt 2026-09-14 */
+    "38f31f4d9532c67c5d8d6b599baa184b",  /* rebuilt 2026-09-14 */
+    "6ee0ecb474db1fa46adbf5380c34a64b",  /* rebuilt 2026-09-14 */
+    "339fec351c9312ce7b550e4f085a7b2a",  /* rebuilt 2026-09-14 */
+    "df99e8ead711ea2bdb6daa9500629bd8",  /* rebuilt 2026-09-14 */
+    "35f3268001a0048630d77e92cad9f112",  /* rebuilt 2026-09-14 */
+    "0a4449fad9c22b00a78bd93853aa52eb",  /* rebuilt 2026-09-14 */
+    "85896e9d8e0c8611a22ffa54e2ed862d",  /* rebuilt 2026-09-14 */
+    "0d758de79cc4c3066ba4a93dcd2af903",  /* rebuilt 2026-09-14 */
+    "20cb4a90395728e458ebdc2ce23d7c7e",  /* rebuilt 2026-09-14 */
+    "8c1f949ade7a869b317157064a285beb",  /* rebuilt 2026-09-14 */
+    "65fe3f9e79009331a4515b3e00ea4751",  /* rebuilt 2026-09-14 */
+    "f331dd13290928a7f846f32b6ba76776",  /* rebuilt 2026-09-14 */
+    "c9514b8df95652d47e9948d4a5a7ffe6",  /* rebuilt 2026-09-14 */
+    "8a71d22c508505c1d3152802df02ae24",  /* rebuilt 2026-09-14 */
+    "e5427727450b7e8a435e28a18abe7dd7",  /* rebuilt 2026-09-14 */
+    "1ad00a44d938b93e8f79c49c495abd64",  /* rebuilt 2026-09-14 */
+    "854082418ddfb45aea3832dbd3b931e8",  /* rebuilt 2026-09-14 */
+    "f5842a97115f7c398a62eb86c82fbbaa",  /* rebuilt 2026-09-14 */
+    "142cca796a305bad075ab003a9e7aa3a",  /* rebuilt 2026-09-14 */
+    "c6efd6791e3a05adb8a94d8b25001d79",  /* rebuilt 2026-09-14 */
+    "eea5e30dc27c1f72c3e2f1d3ad57f2ff",  /* rebuilt 2026-09-14 */
+    "3cc789cf6ef80f95df887084f8163591",  /* rebuilt 2026-09-14 */
+    "d4a857dd15d9d59cd0000ab91cb8caee",  /* rebuilt 2026-09-13 */
+    "3c7ea91c904a5550f7df0f5170612488",  /* rebuilt 2026-09-13 */
+    "e19abe3da4fbce839f003ab3d2f0a7b3",  /* rebuilt 2026-09-13 */
+    "82283d23d760677fd6d1ad6a98629832",  /* rebuilt 2026-09-13 */
+    "1f2b593f4843f4a8a7fafa0915255870",  /* rebuilt 2026-09-13 */
+    "5a9489ccb95d3f54b154697d2f61d5ea",  /* rebuilt 2026-09-13 */
+    "c6f495338c574269df97d906cb15b3bb",  /* rebuilt 2026-09-13 */
+    "b90880776466ad78873e922e84af0904",  /* rebuilt 2026-09-13 */
+    "461a2f8794db077e28ae942a65deff3d",  /* rebuilt 2026-09-13 */
+    "90d333a5a088bf19076c89b48db0add2",  /* rebuilt 2026-09-13 */
+    "c77dce79dc24719b1c9cd65482196c1d",  /* rebuilt 2026-09-13 */
+    "506cff530181e91a55d8daae8aac3b63",  /* rebuilt 2026-09-13 */
+    "f05ac4fd2ebec711c6c2365ca72460d5",  /* rebuilt 2026-09-13 */
+    "99e6263251d1801710385e566431d398",  /* rebuilt 2026-09-13 */
     "c56669c45adf1b58ef06f8b666f33586",  /* final 1.2.0 build: digest build-signature, no game bytes in the source */
     "e56788a46f09c1adfc7f067d13eb92a2",  /* build signature stored as md5 instead of 40 bytes of the game's code */
     "fc36ce1ad3a316ccd70337b5334d486a",  /* gunfire ships at 0 */
@@ -162,6 +202,8 @@ static const char *OUR_FP_INI_MD5[] = {
     "8bb4df980f1bca8bb193e4adb62868d3",  /* 1.1.1 and 1.2.0 - the correction was on by default    */
     "6b7eb4cdba02d287d6d2b056e8aeceaf",  /* the seat that ships: 150 / -3 / -31, near 42, view_mode 13 */
     "4cad19eefcd28ccd3cef103cf851df71",  /* the settled seat: 150 / 3 / -25, near 36, roll lock */
+    "88c3783693a5f28aa0abff1386d048e8",  /* 2026-09-13: comments only - F1..F5 are the FFB preset
+                                            bank again, and the seat direction table was wrong */
 };
 /* THE TWO ROWS AT THE TOP WERE MISSING AND THAT WAS A REAL DEFECT, found 2026-08-14 while
    shipping 1.2.1. The file this patcher INSTALLS has to be recognisable as ours or an uninstall
@@ -187,6 +229,10 @@ static int is_our_fp_ini(const char *md5)
  * Ultimate ASI Loader scans the game directory, `scripts\` and `plugins\`, and nothing else.
  */
 static const char *OUR_GEARBOX_MD5[] = {
+    "9ced50d3864600620e6638ae982c56a0",  /* 2.0.0: the current source with mode_enforce (b8b645c),
+                                            on the bench in every drive since 2026-09-14 */
+    "2ea4b6281e738e77625f1b6062534436",  /* rebuilt 2026-09-14 */
+    "a98738e6c08604be89c32177a45be34f",  /* rebuilt 2026-08-15 */
     "bb8c01dbabfec6a6ffc4a95de40693d7",  /* rebuilt 2026-08-12 */
     "62d736ea26e8e2948dae2fe1785a9e35",  /* settings folder moved under ALXG mods\, mode key M */
     "463cbcf594dc24b9d4ea11b6e88a6f76",  /* the build that ships - freeze detector, GOG table */
