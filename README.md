@@ -33,7 +33,7 @@ Too long to read? This is all of it:
 4. Run it.
 5. Switch on the mods you want, inside the program, and play.
 
-**Then set them up - [it is worth five minutes](#-setting-each-mod-up).** Especially the force
+**Then set them up - [it is worth five minutes](#%EF%B8%8F-setting-each-mod-up).** Especially the force
 feedback - tell it your wheel's rotation range.
 
 | | mod | in this release |
@@ -277,7 +277,7 @@ you do not already have your own.
 
 ## Usage
 
-Setting the mods up is [its own section above](#-setting-each-mod-up). This is what you do once
+Setting the mods up is [its own section above](#%EF%B8%8F-setting-each-mod-up). This is what you do once
 they are set up.
 
 While driving, with the first-person camera on, the shipped keys are:

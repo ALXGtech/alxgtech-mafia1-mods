@@ -33,7 +33,7 @@ Za długie, żeby czytać? Oto wszystko w skrócie:
 4. Uruchom go.
 5. Włącz w programie mody, które chcesz, i graj.
 
-**Potem je skonfiguruj - [to zajmie pięć minut](#-konfiguracja-każdego-moda).** Zwłaszcza Force
+**Potem je skonfiguruj - [to zajmie pięć minut](#%EF%B8%8F-konfiguracja-każdego-moda).** Zwłaszcza Force
 Feedback - podaj mu zakres obrotu twojej kierownicy.
 
 | | mod | w tym wydaniu |
@@ -289,7 +289,7 @@ tylko wtedy, gdy nie masz jeszcze własnych.
 
 ## Użytkowanie
 
-Konfiguracja modów ma [swoją sekcję powyżej](#-konfiguracja-każdego-moda). To jest to, co robisz,
+Konfiguracja modów ma [swoją sekcję powyżej](#%EF%B8%8F-konfiguracja-każdego-moda). To jest to, co robisz,
 gdy są już skonfigurowane.
 
 Podczas jazdy, przy włączonej kamerze z perspektywy pierwszej osoby, domyślne klawisze to:

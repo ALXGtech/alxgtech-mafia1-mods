@@ -32,7 +32,7 @@ Příliš dlouhé na čtení? To je všechno:
 4. Spusťte jej.
 5. V programu zapněte módy, které chcete, a hrajte.
 
-**Pak je nastavte - [je to na pět minut](#-nastavení-každého-módu).** Hlavně silovou zpětnou
+**Pak je nastavte - [je to na pět minut](#%EF%B8%8F-nastavení-každého-módu).** Hlavně silovou zpětnou
 vazbu - řekněte jí rozsah otáčení vašeho volantu.
 
 | | mód | v tomto vydání |
@@ -282,7 +282,7 @@ nemáte.
 
 ## Používání
 
-Nastavení módů má [vlastní sekci výše](#-nastavení-každého-módu). Tady je to, co děláte, když už
+Nastavení módů má [vlastní sekci výše](#%EF%B8%8F-nastavení-každého-módu). Tady je to, co děláte, když už
 jsou nastavené.
 
 Za jízdy se zapnutou kamerou z pohledu řidiče jsou výchozí klávesy tyto:
