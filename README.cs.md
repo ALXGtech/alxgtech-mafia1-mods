@@ -14,6 +14,8 @@ Mafia tak konečně jezdí jako pořádná simulace!
 
 ![ALXGtech Mafia 1 Mods - silová zpětná vazba, kamera z pohledu řidiče, H-řadička a VR v přípravě](docs/img/banner.png)
 
+![Taxík zaseknutý u reklamního sloupu: skutečná H-řadička zařadí zpátečku a znovu jedničku, pak se kamera přesune na místo řidiče. Vpravo nahoře skutečný volant, vpravo dole rychlostní stupeň na tachometru](docs/img/clip-hero.webp)
+
 ## 🚀 Rychlý start
 
 Tři módy pro **Mafia: The City of Lost Heaven (2002)** - tu původní, první Mafii - v jednom malém programu.
@@ -88,16 +90,22 @@ Původní hra volantem při srážce skutečně trhne; tohle to nahrazuje plným
 se načítá za běhu, takže změna na záložce Force Feedback je cítit v další zatáčce, ne až po
 restartu.
 
+![Silová zpětná vazba: obě ruce pustí skutečný volant (vpravo nahoře) a ten dál zatáčí sám](docs/img/clip-ffb.webp)
+
 **👁️ Kamera z pohledu řidiče.** Kamera sedí na místě řidiče, ne za vozem. Chůze zůstává beze
 změny. Posazení je nastavené tam, kde bylo vyladěno za volantem, a lze s ním hýbat klávesami
 přímo za jízdy; kde je necháte, tam zůstane. Zapnutí tohoto módu zároveň rozšíří zorné pole
 hry ze 70 na 86 stupňů, což odpovídá obrazovce 16:9 - a 70 vypadá nejhůř právě z místa řidiče.
 Úhel se nastavuje posuvníkem na téže záložce a vypnutí módu vrátí původní bajty.
 
+![Kamera z pohledu řidiče: městská ulice z místa řidiče, na konci smyk](docs/img/clip-first-person.webp)
+
 **🕹️ H-řadička.** Skutečná kulisa ovládá vlastní převody Mafie, takže kulisa znamená převod. Módul
 čte řadičku přes DirectInput, skryje hře přiřazená tlačítka a po každém zařazení si ověří
 převod přímo ve hře, takže se nemůže rozejít se skutečností a sám se omezí na skutečný počet
 převodů daného vozu bez tabulky pro každý z nich.
+
+![Nastavení H-řadičky: každý stupeň zařazený na skutečné řadičce (vpravo dole) vyplní svůj řádek na záložce H-shifter](docs/img/clip-h-shifter.webp)
 
 Čtvrtý mód, **🥽 VR**, je **🚧 již brzy**. Jeho záložka v okně je proto, aby nikdo nemusel přemýšlet,
 zda se na něj nezapomnělo, a říká totéž: není hotový, zatím nic neinstaluje.

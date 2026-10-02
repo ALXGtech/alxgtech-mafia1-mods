@@ -15,6 +15,8 @@ So now Mafia drives like a proper sim game at last!
 
 ![ALXGtech Mafia 1 Mods - force feedback, first-person camera, H-shifter, and VR in progress](docs/img/banner.png)
 
+![A taxi stuck against a column: the real H-shifter puts it in reverse and back into first, then the camera moves to the driver's seat. Top right, the real wheel; bottom right, the gear on the speedometer](docs/img/clip-hero.webp)
+
 ## 🚀 Quick start
 
 Three mods for **Mafia: The City of Lost Heaven (2002)** - the OG Mafia 1 - in a single small program.
@@ -86,6 +88,8 @@ way a wheel should in 2026. The stock game does knock the wheel on a collision; 
 full force model. Settings are re-read while the game runs, so a change on the Force Feedback
 tab is felt on the next corner and not after a restart.
 
+![Force feedback: both hands come off the real wheel (top right) and it goes on steering by itself](docs/img/clip-ffb.webp)
+
 **👁️ First-person driving camera.** The camera sits in the driver's seat instead of behind the
 car. On foot is untouched. The seat position ships at the place it was settled at the wheel and
 can be moved with the keys below while you drive; where you leave it is where it stays.
@@ -93,10 +97,14 @@ Switching this mod on also widens the game's field of view from 70 to 86 degrees
 fits a 16:9 screen - 70 is at its worst from the driver's seat. The angle is a slider on the
 same tab, and switching the mod off puts the original bytes back.
 
+![The first-person camera: a city street from the driver's seat, ending in a spin](docs/img/clip-first-person.webp)
+
 **🕹️ H-shifter gearbox.** A real H-pattern shifter drives Mafia's own gear controls, so a gate is
 a gear. It reads the shifter through DirectInput, hides the bound buttons from the game, and
 checks the game's own gear after every shift, so it cannot drift out of step and it clamps to
 each car's real gear count without a per-car table.
+
+![Binding the H-shifter: each gear engaged on the real shifter (bottom right) fills its row in the H-shifter tab](docs/img/clip-h-shifter.webp)
 
 A fourth mod, **🥽 VR**, is **🚧 coming soon**. Its tab is in the window so that nobody has to wonder
 whether it was forgotten, and it says the same thing: not finished, installs nothing yet.

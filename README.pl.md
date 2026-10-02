@@ -15,6 +15,8 @@ Dzięki temu Mafia wreszcie jeździ jak porządna gra symulacyjna!
 
 ![ALXGtech Mafia 1 Mods - Force Feedback, kamera pierwszoosobowa, H-shifter i VR w przygotowaniu](docs/img/banner.png)
 
+![Taksówka utknęła przy słupie ogłoszeniowym: prawdziwy H-shifter wrzuca wsteczny i z powrotem jedynkę, potem kamera przenosi się na miejsce kierowcy. W prawym górnym rogu prawdziwa kierownica, w prawym dolnym bieg na prędkościomierzu](docs/img/clip-hero.webp)
+
 ## 🚀 Szybki start
 
 Trzy mody dla **Mafia: The City of Lost Heaven (2002)** - tej oryginalnej, pierwszej Mafii - w jednym małym programie.
@@ -91,6 +93,8 @@ szarpie kierownicą przy zderzeniu; tutaj zastępuje to pełny model sił. Ustaw
 na bieżąco, więc zmiana na zakładce Force Feedback jest odczuwalna na następnym zakręcie, a nie
 dopiero po restarcie.
 
+![Force Feedback: obie ręce puszczają prawdziwą kierownicę (prawy górny róg), a ona dalej skręca sama](docs/img/clip-ffb.webp)
+
 **👁️ Kamera z perspektywy pierwszej osoby.** Kamera siedzi na miejscu kierowcy, a nie za
 samochodem. Poruszanie się pieszo pozostaje bez zmian. Pozycja fotela startuje tam, gdzie została
 ustalona za kierownicą, i można nią ruszać klawiszami podczas jazdy; tam, gdzie ją zostawisz, tam
@@ -98,11 +102,15 @@ zostaje. Włączenie tego moda dodatkowo poszerza kąt widzenia gry z 70 do 86 s
 ile pasuje do ekranu 16:9 - 70 wygląda najgorzej właśnie z miejsca kierowcy. Kąt ustawia się
 suwakiem na tej samej zakładce, a wyłączenie moda przywraca oryginalne bajty.
 
+![Kamera z perspektywy pierwszej osoby: ulica miasta z miejsca kierowcy, na koniec poślizg](docs/img/clip-first-person.webp)
+
 **🕹️ H-shifter.** Prawdziwa skrzynia typu H steruje własnymi biegami Mafii, więc położenie w
 kulisie to i jest wybrany bieg. Mod odczytuje skrzynię przez DirectInput, ukrywa przed grą
 przypisane przyciski i po każdej zmianie biegu sprawdza bieg w samej grze, więc nie może zejść z
 synchronizacji, a liczba biegów jest ograniczana do rzeczywistej liczby danego samochodu bez
 osobnej tabeli dla każdego z nich.
+
+![Przypisywanie H-shiftera: każdy bieg wrzucony na prawdziwym shifterze (prawy dolny róg) wypełnia swój wiersz w zakładce H-shifter](docs/img/clip-h-shifter.webp)
 
 Czwarty mod, **🥽 VR**, jest **🚧 już wkrótce**. Jego zakładka jest w oknie, żeby nikt nie musiał się
 zastanawiać, czy o nim zapomniano, i mówi to samo: nieukończony, na razie nic nie instaluje.
